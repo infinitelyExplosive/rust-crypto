@@ -1,4 +1,14 @@
-use rug::Integer;
+use rug::{Assign, Integer, Rational};
+use std::process::Output;
+
+trait RugNumber<'a>: std::ops::Mul<&'a Self>
+where
+    Self: 'a,
+{
+}
+
+impl RugNumber<'_> for Integer {}
+impl RugNumber<'_> for Rational {}
 
 pub fn find_inverse(e: &Integer, n: &Integer) -> Integer {
     let (_r, _s, t) = extended_euclidian(n, e);
@@ -109,4 +119,153 @@ pub fn crt<'a>(
     }
 
     return a;
+}
+
+pub fn lll(basis_integer: &Vec<Vec<Integer>>) -> Vec<Vec<Integer>> {
+    let n = basis_integer[0].len() - 1;
+    let delta = Rational::from((3, 4));
+
+    let mut basis: Vec<Vec<Rational>> = basis_integer
+        .iter()
+        .map(|vec| vec.iter().map(|x| Rational::from((x, 1))).collect())
+        .collect();
+
+    // println!("rational basis:");
+    print_basis(&basis, 0);
+
+    let mut b_star = gsp(&basis);
+
+    // println!("b*:");
+    print_basis(&b_star, 0);
+
+    let mut mu_matrix: Vec<Vec<Rational>> = compute_mus(&basis, &b_star);
+
+    // println!("mu:");
+    print_basis(&mu_matrix, 0);
+    println!();
+
+    let mut k = 1;
+    while k <= n {
+        for j in (0..k).rev() {
+            // println!("trying k={} j={} mu={}", k, j, mu_matrix[k][j]);
+            if mu_matrix[k][j] > 0.5 {
+                // let mut to_subtract = Rational::new();
+                // print!(" mu*b_j = [");
+                for i in 0..basis[0].len() {
+                    // print!("{:?}, ", Rational::from(&mu_matrix[k][j]).round());
+                    let to_subtract = Rational::from(&mu_matrix[k][j]).round() * &basis[j][i];
+                    basis[k][i] -= &to_subtract;
+                }
+                // println!("]");
+                b_star = gsp(&basis);
+                mu_matrix = compute_mus(&basis, &b_star);
+
+                // println!(" rational basis:");
+                // print_basis(&basis, 1);
+                // println!(" b*:");
+                // print_basis(&b_star, 1);
+                // println!("mu:");
+                // print_basis(&mu_matrix, 1);
+                // println!();
+            }
+        }
+        if inner_product(&b_star[k], &b_star[k])
+            >= (&delta - Rational::from(mu_matrix[k][k - 1].square_ref()))
+                * inner_product(&b_star[k - 1], &b_star[k - 1])
+        {
+            k += 1;
+            // println!("increment k to {}\n", k);
+        } else {
+            basis.swap(k - 1, k);
+            b_star = gsp(&basis);
+            mu_matrix = compute_mus(&basis, &b_star);
+            k = std::cmp::max(k - 1, 1);
+
+            // println!("swap {} {}", k, k-1);
+            // println!("rational basis:");
+            // print_basis(&basis, 1);
+            // println!("b*:");
+            // print_basis(&b_star, 1);
+            // println!("mu:");
+            // print_basis(&mu_matrix, 1);
+            // println!();
+            // println!("k to {}\n", k);
+        }
+    }
+
+    let integer_basis: Vec<Vec<Integer>> = basis
+        .iter()
+        .map(|v| {
+            v.iter()
+                .map(|elem| Integer::from(Rational::from(elem).round().numer()))
+                .collect()
+        })
+        .collect();
+    return integer_basis;
+}
+
+fn compute_mus(basis: &Vec<Vec<Rational>>, b_star: &Vec<Vec<Rational>>) -> Vec<Vec<Rational>> {
+    return basis
+        .iter()
+        .map(|v| {
+            b_star
+                .iter()
+                .map(|v_star| {
+                    Rational::from(inner_product(v, v_star) / inner_product(v_star, v_star))
+                })
+                .collect()
+        })
+        .collect();
+}
+
+pub fn gsp(basis: &Vec<Vec<Rational>>) -> Vec<Vec<Rational>> {
+    let mut new_basis = Vec::new();
+
+    for (i, vector) in basis.iter().enumerate() {
+        // println!("reducing v{} ({:?})", i, vector);
+        let mut u_n = basis[i].clone();
+        for j in 0..i {
+            let sub = proj(&new_basis[j], vector);
+            // println!(
+            // " subtracting proj_{}{:?} ({:?}) = {:?}",
+            // j, new_basis[j], u_n, sub
+            // );
+            for (k, u_val) in u_n.iter_mut().enumerate() {
+                *u_val -= &sub[k];
+            }
+        }
+        // println!("reduced v{} to {:?}", i, u_n);
+        new_basis.push(u_n);
+    }
+    return new_basis;
+}
+
+fn proj(u: &Vec<Rational>, v: &Vec<Rational>) -> Vec<Rational> {
+    let mut ret = u.clone();
+    let uv = inner_product(u, v);
+    let uu = inner_product(u, u);
+
+    let mu = uv / uu;
+    for val in ret.iter_mut() {
+        *val *= &mu;
+    }
+
+    return ret;
+}
+
+fn inner_product<'a, T, U>(u: &'a [T], v: &'a [U]) -> Rational
+where
+    &'a T: std::ops::Mul<&'a U>,
+    <&'a T as std::ops::Mul<&'a U>>::Output: Into<Rational>,
+{
+    return u.iter().zip(v).map(|(un, vn)| (un * vn).into()).sum();
+}
+
+fn print_basis(basis: &Vec<Vec<Rational>>, indent: i32) {
+    for vec in basis {
+        for _ in 0..indent {
+            print!(" ");
+        }
+        println!("{:?}", vec);
+    }
 }

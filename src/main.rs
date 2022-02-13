@@ -1,14 +1,50 @@
 #![allow(dead_code)]
 use rug::integer::{IsPrime, Order};
 use rug::rand::RandState;
-use rug::{Assign, Integer};
-use std::str;
+use rug::{Assign, Integer, Rational};
+use std::{str, vec};
 
 mod cryptlib;
 
 fn main() {
     // test_rsa();
-    test_crt();
+    // test_crt();
+    // test_gsp();
+    test_lll();
+}
+
+fn test_lll() {
+    let mut basis = Vec::new();
+
+    let data = vec![vec![1,1,1],vec![-1,0,2],vec![3,5,6]];
+    for line in data {
+        let mut row = Vec::new();
+        for val in line {
+            row.push(Integer::from(val));
+        }
+        basis.push(row);
+    }
+    println!("{:?}", basis);
+    let reduced = cryptlib::lll(&basis);
+    println!("lll:\n{:?}", reduced);
+}
+
+fn test_gsp() {
+    let mut basis = Vec::new();
+    // let data = vec![vec![1,-1,1], vec![1,0,1], vec![1,1,2]];
+    let data = vec![vec![3,5,-2,3,3], vec![1,2,3,4,5], vec![-5,5,-5,5,0], vec![3,0,2,0,1], vec![1,1,1,-1,1]];
+    for line in data {
+        let mut row = Vec::new();
+        for val in line {
+            row.push(Rational::from(val));
+        }
+        basis.push(row);
+    }
+
+    println!("{:?}", basis);
+    let reduced= cryptlib::gsp(&basis);
+    println!("gsp:\n{:?}", reduced);
+    // https://www.emathhelp.net/en/calculators/linear-algebra/gram-schmidt-calculator/?i=%5B%5B3%2C1%2C-5%2C3%2C1%5D%2C%5B5%2C2%2C5%2C0%2C1%5D%2C%5B-2%2C3%2C-5%2C2%2C1%5D%2C%5B3%2C4%2C5%2C0%2C-1%5D%2C%5B3%2C5%2C0%2C1%2C1%5D%5D
 }
 
 fn test_crt() {
