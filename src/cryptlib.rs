@@ -127,18 +127,18 @@ pub fn lll(basis_integer: &Vec<Vec<Integer>>) -> Vec<Vec<Integer>> {
 
     let mut basis: Vec<Vec<Rational>> = basis_integer
         .iter()
-        .map(|vec| vec.iter().map(|x| Rational::from((x, 1))).collect())
+        .map(|vec| vec.iter().map(|x| Rational::from(x)).collect())
         .collect();
 
     // println!("rational basis:");
     print_basis(&basis, 0);
 
-    let mut b_star = gsp(&basis);
+    let (mut b_star, mut mu_matrix) = gsp(&basis);
 
     // println!("b*:");
     print_basis(&b_star, 0);
 
-    let mut mu_matrix: Vec<Vec<Rational>> = compute_mus(&basis, &b_star);
+    // let mut mu_matrix: Vec<Vec<Rational>> = compute_mus(&basis, &b_star);
 
     // println!("mu:");
     print_basis(&mu_matrix, 0);
@@ -157,8 +157,10 @@ pub fn lll(basis_integer: &Vec<Vec<Integer>>) -> Vec<Vec<Integer>> {
                     basis[k][i] -= &to_subtract;
                 }
                 // println!("]");
-                b_star = gsp(&basis);
-                mu_matrix = compute_mus(&basis, &b_star);
+                let (new_b_star, new_mu_matrix) = gsp(&basis);
+                b_star = new_b_star;
+                mu_matrix = new_mu_matrix;
+                // mu_matrix = compute_mus(&basis, &b_star);
 
                 // println!(" rational basis:");
                 // print_basis(&basis, 1);
@@ -177,8 +179,11 @@ pub fn lll(basis_integer: &Vec<Vec<Integer>>) -> Vec<Vec<Integer>> {
             // println!("increment k to {}\n", k);
         } else {
             basis.swap(k - 1, k);
-            b_star = gsp(&basis);
-            mu_matrix = compute_mus(&basis, &b_star);
+            let (new_b_star, new_mu_matrix) = gsp(&basis);
+            b_star = new_b_star;
+            mu_matrix = new_mu_matrix;
+
+            // mu_matrix = compute_mus(&basis, &b_star);
             k = std::cmp::max(k - 1, 1);
 
             // println!("swap {} {}", k, k-1);
@@ -193,15 +198,11 @@ pub fn lll(basis_integer: &Vec<Vec<Integer>>) -> Vec<Vec<Integer>> {
         }
     }
 
-    let integer_basis: Vec<Vec<Integer>> = basis
+    let basis_output: Vec<Vec<Integer>> = basis
         .iter()
-        .map(|v| {
-            v.iter()
-                .map(|elem| Integer::from(Rational::from(elem).round().numer()))
-                .collect()
-        })
+        .map(|v| v.iter().map(|elem| Rational::from(elem).round().into_numer_denom().0).collect())
         .collect();
-    return integer_basis;
+    return basis_output;
 }
 
 fn compute_mus(basis: &Vec<Vec<Rational>>, b_star: &Vec<Vec<Rational>>) -> Vec<Vec<Rational>> {
@@ -218,14 +219,15 @@ fn compute_mus(basis: &Vec<Vec<Rational>>, b_star: &Vec<Vec<Rational>>) -> Vec<V
         .collect();
 }
 
-pub fn gsp(basis: &Vec<Vec<Rational>>) -> Vec<Vec<Rational>> {
+pub fn gsp(basis: &Vec<Vec<Rational>>) -> (Vec<Vec<Rational>>, Vec<Vec<Rational>>) {
     let mut new_basis = Vec::new();
-
+    let mut mus = Vec::new();
     for (i, vector) in basis.iter().enumerate() {
+        let mut mu_row = Vec::new();
         // println!("reducing v{} ({:?})", i, vector);
         let mut u_n = basis[i].clone();
         for j in 0..i {
-            let sub = proj(&new_basis[j], vector);
+            let (sub, mu) = proj(&new_basis[j], vector);
             // println!(
             // " subtracting proj_{}{:?} ({:?}) = {:?}",
             // j, new_basis[j], u_n, sub
@@ -233,14 +235,16 @@ pub fn gsp(basis: &Vec<Vec<Rational>>) -> Vec<Vec<Rational>> {
             for (k, u_val) in u_n.iter_mut().enumerate() {
                 *u_val -= &sub[k];
             }
+            mu_row.push(mu);
         }
         // println!("reduced v{} to {:?}", i, u_n);
         new_basis.push(u_n);
+        mus.push(mu_row);
     }
-    return new_basis;
+    return (new_basis, mus);
 }
 
-fn proj(u: &Vec<Rational>, v: &Vec<Rational>) -> Vec<Rational> {
+fn proj(u: &Vec<Rational>, v: &Vec<Rational>) -> (Vec<Rational>, Rational) {
     let mut ret = u.clone();
     let uv = inner_product(u, v);
     let uu = inner_product(u, u);
@@ -250,7 +254,7 @@ fn proj(u: &Vec<Rational>, v: &Vec<Rational>) -> Vec<Rational> {
         *val *= &mu;
     }
 
-    return ret;
+    return (ret, mu);
 }
 
 fn inner_product<'a, T, U>(u: &'a [T], v: &'a [U]) -> Rational
