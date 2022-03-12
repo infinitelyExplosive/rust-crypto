@@ -1,10 +1,10 @@
 #![allow(dead_code, non_snake_case)]
 use rug::integer::{IsPrime, Order};
-use rug::rand::RandState;
+use rug::rand::{RandState};
 use rug::{Assign, Integer, Rational};
 use std::str::FromStr;
-use std::{str, vec};
 use std::time::Instant;
+use std::{str, vec};
 
 mod cryptlib;
 
@@ -14,8 +14,8 @@ fn main() {
     // test_gsp();
     // test_gsp_equivalence();
     // test_lll();
-    test_coppersmith();
-    // test_hastad_broadcast();
+    // test_coppersmith();
+    test_hastad_broadcast();
 }
 
 fn test_gsp_equivalence() {
@@ -45,7 +45,7 @@ fn test_gsp_equivalence() {
         basis.push(row);
     }
 
-    for line in other_data{
+    for line in other_data {
         let mut row = Vec::new();
         for val in line {
             row.push(Rational::from(val));
@@ -64,13 +64,12 @@ fn test_gsp_equivalence() {
         println!("")
     }
 
-
     let mut b_star_2 = (0..basis.len()).map(|_x| Vec::new()).collect();
     let mut mu_matrix = (0..basis.len()).map(|_x| Vec::new()).collect();
     cryptlib::gsp_efficient(&basis, &mut b_star_2, &mut mu_matrix, 0);
 
     println!("gsp2:");
-    for line in &b_star_2{
+    for line in &b_star_2 {
         print!(" ");
         for val in line {
             print!("{:+.3},  ", val.to_f32());
@@ -79,7 +78,7 @@ fn test_gsp_equivalence() {
     }
 
     for (line1, line2) in b_star_1.iter().zip(b_star_2.iter()) {
-        for (val1, val2) in line1.iter().zip(line2){
+        for (val1, val2) in line1.iter().zip(line2) {
             assert!(*val1 == *val2);
         }
     }
@@ -99,7 +98,7 @@ fn test_gsp_equivalence() {
     cryptlib::gsp_efficient(&other_basis, &mut b_star_2, &mut mu_matrix, 2);
 
     println!("gsp2:");
-    for line in &b_star_2{
+    for line in &b_star_2 {
         print!(" ");
         for val in line {
             print!("{:+.3},  ", val.to_f32());
@@ -108,12 +107,10 @@ fn test_gsp_equivalence() {
     }
 
     for (line1, line2) in b_star_1.iter().zip(b_star_2.iter()) {
-        for (val1, val2) in line1.iter().zip(line2){
+        for (val1, val2) in line1.iter().zip(line2) {
             assert!(*val1 == *val2);
         }
     }
-
-    
 }
 
 fn test_coppersmith() {
@@ -142,7 +139,12 @@ fn test_coppersmith() {
     let p: i64 = 1073741827;
     let q: i64 = 4294967311;
     let n = Integer::from(p) * q;
-    let COEFFS: Vec<&str> = vec!["1942528644709637042", "1234567890123456789", "987654321987654321", "1"];
+    let COEFFS: Vec<&str> = vec![
+        "1942528644709637042",
+        "1234567890123456789",
+        "987654321987654321",
+        "1",
+    ];
     let m = 2;
     let epsilon_denom = 10;
 
@@ -165,7 +167,6 @@ fn test_coppersmith() {
 }
 
 fn test_hastad_broadcast() {
-    //TODO: FINISH ME
     struct HastadRSAConfig {
         n: Integer,
         e: Integer,
@@ -173,42 +174,48 @@ fn test_hastad_broadcast() {
         f: Vec<Integer>,
     }
 
-    let N_BITS = 32;
+    let N_BITS = 256;
     let CONFIGS = 3; // degree (x+c)^3 = 3
-    let e = Integer::from(2);
+    let m = 2;
+    let epsilon_denom = 11;
+    let e = Integer::from(3);
+    let msg = Integer::from_digits("YELLOW SUBMARINE".as_bytes(), Order::Lsf);
 
     let mut configs: Vec<HastadRSAConfig> = Vec::new();
 
+    let mut rand = RandState::new();
+    rand.seed(&Integer::from(1));
     for i in 0..CONFIGS {
         let mut p = Integer::new();
         let mut q = Integer::new();
 
-        let mut rand = RandState::new();
         while p.is_probably_prime(40) == IsPrime::No
             || Integer::from(&p % &e) == 0
             || configs.iter().any(|config| &config.n % p.clone() == 0)
         {
-            p.assign(Integer::random_bits((N_BITS / 2)-4, &mut rand));
+            p.assign(Integer::random_bits(N_BITS / 2, &mut rand));
         }
 
         while q.is_probably_prime(40) == IsPrime::No
             || Integer::from(&q % &e) == 0
             || configs.iter().any(|config| &config.n % q.clone() == 0)
         {
-            q.assign(Integer::random_bits((N_BITS / 2)-4, &mut rand));
+            q.assign(Integer::random_bits(N_BITS / 2, &mut rand));
         }
-        println!("p:{} q:{}\nn:{}\n", p, q, Integer::from(&p*&q));
+        let n = Integer::from(&p * &q);
+        println!("p:{} q:{}\nn:{}\n", p, q, n);
 
         let phi_n = Integer::from(&p - 1) * Integer::from(&q - 1);
         let d = cryptlib::find_inverse(&phi_n, &e);
 
         let mut f = Vec::new();
 
-        f.push(Integer::from(32*i));
+        f.push(Integer::from(32 * i));
         f.push(Integer::from(1));
+        // println!("f: {:?}\n", f);
 
         let config = HastadRSAConfig {
-            n: Integer::from(&p * &q),
+            n: n,
             e: e.clone(),
             d: d,
             f: f,
@@ -217,24 +224,25 @@ fn test_hastad_broadcast() {
         configs.push(config);
     }
 
-    // let msg = Integer::from_digits("a".as_bytes(), Order::Lsf);
-    // let cs: Vec<Integer> = configs
-    //     .iter()
-    //     .map(|config| {
-    //         let f_x = cryptlib::eval_poly(&msg, &config.f, &config.n);
-    //         cryptlib::fast_power(&f_x, &e, &config.n)
-    //     })
-    //     .collect();
+    println!("msg:{}", msg);
 
-    // let gs: Vec<Vec<Integer>> = configs
-    //     .iter()
-    //     .zip(cs)
-    //     .map(|(config, c)| {
-    //         let mut g = cryptlib::exp_poly(&config.f, &e);
-    //         g[0] -= &c;
-    //         g
-    //     })
-    //     .collect();
+    let cs: Vec<Integer> = configs
+        .iter()
+        .map(|config| {
+            let f_x = cryptlib::eval_poly(&msg, &config.f, &config.n);
+            cryptlib::fast_power(&f_x, &e, &config.n)
+        })
+        .collect();
+
+    let gs: Vec<Vec<Integer>> = configs
+        .iter()
+        .zip(&cs)
+        .map(|(config, c)| {
+            let mut g = cryptlib::exp_poly(&config.f, &e);
+            g[0] -= c;
+            g
+        })
+        .collect();
 
     let n1s: Vec<Integer> = (0..CONFIGS)
         .map(|i| {
@@ -247,30 +255,40 @@ fn test_hastad_broadcast() {
 
     let ts: Vec<Integer> = configs
         .iter()
-        .zip(n1s)
+        .zip(&n1s)
         .map(|(config, n1)| {
-            let (m1, _m2) = cryptlib::bezout(&n1, &config.n);
-            Integer::from(&n1 * m1)
+            let (m1, _m2) = cryptlib::bezout(n1, &config.n);
+            Integer::from(n1 * m1)
         })
         .collect();
 
+    let n = Integer::from(&n1s[0] * &configs[0].n);
     let mut g = Vec::new();
-    g.push(Integer::from(0));
-    g.push(Integer::from(0));
-    g.push(Integer::from(0));
+    for _ in 0..(e.to_i32().unwrap() + 1) {
+        g.push(Integer::from(0));
+    }
 
-    for (config, t) in configs.iter().zip(ts.iter()) {
-        for i in 0..config.f.len() {
-            g[i] += Integer::from(&config.f[i] * t);
+    for (g_partial, t) in gs.iter().zip(ts.iter()) {
+        for i in 0..g_partial.len() {
+            g[i] += Integer::from(&g_partial[i] * t);
+            g[i] %= &n;
         }
     }
 
-    let n = Integer::from(&ts[0] * &configs[0].n);
     println!("overall:");
     println!("n:{}", n);
     println!("g: {:?}", g);
-    let x_0 = cryptlib::coppersmith(&g, &n, 10, 20);
+    println!("sanity: {}", cryptlib::eval_poly(&msg, &g, &n));
+
+    let x_0 = cryptlib::coppersmith(&g, &n, m, epsilon_denom);
     println!("{}", x_0);
+    let mut msg_bytes = Vec::new();
+    for offset in 0..=(x_0.significant_bits() / 8) {
+        let low_bytes: Integer = x_0.clone() >> (offset * 8) & 0xff;
+        let low_u8 = low_bytes.to_u8().unwrap();
+        msg_bytes.push(low_u8);
+    }
+    println!("{}", String::from_utf8(msg_bytes).unwrap());
 }
 
 fn test_lll() {
@@ -279,7 +297,12 @@ fn test_lll() {
     // let data = vec![vec![1, 1, 1], vec![-1, 0, 2], vec![3, 5, 6]];
     let m = 10001;
     let x = 10;
-    let data = vec![vec![m, 0, 0, 0], vec![0, m*x, 0, 0], vec![0, 0, m*x, 0], vec![-222, 5000*x, 10*x, x]];
+    let data = vec![
+        vec![m, 0, 0, 0],
+        vec![0, m * x, 0, 0],
+        vec![0, 0, m * x, 0],
+        vec![-222, 5000 * x, 10 * x, x],
+    ];
     // let data = vec![vec![m, 0, 0, 0], vec![0, m, 0, 0], vec![0, 0, m, 0], vec![-222, 5000, 10, 0]];
     for line in data {
         let mut row = Vec::new();

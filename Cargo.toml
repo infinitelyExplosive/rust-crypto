@@ -11,4 +11,4 @@ num-bigint = "0.4"
 [dependencies.rug]
 version = "1.15"
 default-features = false
-features = ["integer", "rand", "rational"]
+features = ["integer", "rand", "rational", "float"]

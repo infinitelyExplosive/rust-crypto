@@ -1,6 +1,5 @@
 use std::io::{self, Write};
-
-use rug::{ops::Pow, Integer, Rational};
+use rug::{ops::Pow, Float, Integer, Rational};
 
 trait RugNumber<'a>: std::ops::Mul<&'a Self>
 where
@@ -216,21 +215,22 @@ pub fn coppersmith(f: &Vec<Integer>, n: &Integer, m: u32, epsilon_denom: u32) ->
         x_powers.push(Integer::from(x_powers.last().unwrap() * &x_powers[1]));
     }
 
-    if debug {
-        println!(
-            "d = {}  N = {}  1/e = {}  X = {} ",
-            d, n, epsilon_denom, x_powers[1]
-        );
-        println!("m = {}  w = {}", m, w);
-        println!("{}", x_powers.len());
-    }
+    // if debug {
+    println!(
+        "d = {}  N = {}  1/e = {}  X = {} ",
+        d, n, epsilon_denom, x_powers[1]
+    );
+    println!("m = {}  w = {}", m, w);
+    println!("{}", x_powers.len());
+    // }
 
     let mut basis = Vec::new();
+    let mut det = Integer::from(1);
 
     if debug {
         println!("starting with basis");
     }
-    for v in 0..(m+1) {
+    for v in 0..(m + 1) {
         for u in 0..d {
             let mut g_uv = exp_poly(f, &Integer::from(v));
 
@@ -253,6 +253,7 @@ pub fn coppersmith(f: &Vec<Integer>, n: &Integer, m: u32, epsilon_denom: u32) ->
                 *coef *= Integer::from(n.pow(m - v));
                 *coef *= &x_powers[i];
             }
+            det *= &g_uv[(u + v * d) as usize];
             for _ in g_uv.len()..w {
                 g_uv.push(Integer::from(0));
                 if debug {
@@ -268,39 +269,49 @@ pub fn coppersmith(f: &Vec<Integer>, n: &Integer, m: u32, epsilon_denom: u32) ->
     if debug {
         println!();
     }
+    let exp_two_w4 = Float::with_val(1024, 2).pow(w as f64 / 4.0);
+    let left_bound = det.root(w as u32) * exp_two_w4;
+
+    let right_bound = Integer::from(n.pow(m)) / Float::with_val(1024, w).sqrt();
+    println!(
+        "condition:{} frac {:.3}",
+        left_bound < right_bound,
+        left_bound / right_bound
+    );
 
     let (reduced_basis, min_idx) = lll(&basis);
 
     if debug {
-        for v in 0..(m+1) {
+        for v in 0..(m + 1) {
             for u in 0..d {
                 print!(" v_{},{}  [", u, v);
                 for coef in &reduced_basis[(u + d * v) as usize] {
                     print!("{:}, ", coef);
                 }
-                println!("]");
+                let norm = inner_product(
+                    &reduced_basis[(u + d * v) as usize],
+                    &reduced_basis[(u + d * v) as usize],
+                )
+                .to_f64();
+                println!("] norm {:.2e}", norm);
             }
         }
-        print!(" v_{},{}  [", 0, m);
-        for coef in &reduced_basis[w - 1] {
-            print!("{:}, ", coef);
-        }
-        println!("]");
     }
 
-    let search_range = 10;
-    let low_poly = &reduced_basis[min_idx];
-    let guesses = approximate_zero(low_poly, &x_powers[1]);
-    for guess_x in guesses {
-        if debug {
-            println!("guess x={}", guess_x);
-        }
+    for reduced_poly in &reduced_basis[0..2] {
+        let search_range = 10;
+        let guesses = approximate_zero(reduced_poly, &x_powers[1]);
+        for guess_x in guesses {
+            // if debug {
+            //     println!("guess x={}", guess_x);
+            // }
 
-        for i in -search_range..=search_range {
-            let x = Integer::from(&guess_x + i);
-            let f_of_x = eval_poly(&x, f, n);
-            if f_of_x == 0 {
-                return x;
+            for i in -search_range..=search_range {
+                let x = Integer::from(&guess_x + i);
+                let f_of_x = eval_poly(&x, f, n);
+                if f_of_x == 0 {
+                    return x;
+                }
             }
         }
     }
@@ -405,7 +416,7 @@ pub fn lll(basis_integer: &Vec<Vec<Integer>>) -> (Vec<Vec<Integer>>, usize) {
     // check ∀1≤i≤n, j<i. |μ_i,j|≤1/2
     for i in 0..basis.len() {
         for j in 0..i {
-            if mu_matrix[i][j] > (1,2) {
+            if mu_matrix[i][j] > (1, 2) {
                 println!("mu_{},{} was {:.3}", i, j, mu_matrix[i][j].to_f32());
             }
             assert!(mu_matrix[i][j] <= (1, 2));
@@ -615,7 +626,7 @@ fn approximate_zero(f: &Vec<Integer>, const_x: &Integer) -> Vec<Integer> {
     let n_guesses = 50;
 
     let xs: Vec<Rational> = (0..n_guesses)
-        .map(|i| Rational::from(i * const_x) / n_guesses + 1)
+        .map(|i| Rational::from(i * const_x) / n_guesses + 97)
         .collect();
 
     if debug {
@@ -637,11 +648,11 @@ fn approximate_zero(f: &Vec<Integer>, const_x: &Integer) -> Vec<Integer> {
             let denom = eval_rational_lattice_poly(&x, &f_prime, const_x);
             if denom == 0 {
                 println!("breaking");
-                break;
+                return results;
             }
             let to_sub = f_of_x / denom;
             x -= &to_sub;
-            x = limit_precision(x,2048);
+            x = limit_precision(x, 4096);
 
             if to_sub <= (1, 256) {
                 count += 1;
