@@ -1,14 +1,9 @@
-use std::io::{self, Write};
 use rug::{ops::Pow, Float, Integer, Rational};
-
-trait RugNumber<'a>: std::ops::Mul<&'a Self>
-where
-    Self: 'a,
-{
-}
-
-impl RugNumber<'_> for Integer {}
-impl RugNumber<'_> for Rational {}
+use std::{
+    fmt::Debug,
+    io::{self, Write},
+    ops::{AddAssign, Mul},
+};
 
 pub fn eval_poly(x: &Integer, f: &Vec<Integer>, n: &Integer) -> Integer {
     let mut sum = Integer::from(0);
@@ -52,18 +47,118 @@ fn eval_rational_lattice_poly(x: &Rational, f: &Vec<Integer>, const_x: &Integer)
     return sum;
 }
 
-pub fn multiply_poly(f: &Vec<Integer>, g: &Vec<Integer>) -> Vec<Integer> {
+pub fn multiply_poly<'a, T>(f: &'a [T], g: &'a [T]) -> Vec<T>
+where
+    &'a T: Mul<&'a T>,
+    T: From<<&'a T as Mul<&'a T>>::Output>,
+    T: From<i32>,
+    T: AddAssign<T>,
+    T: PartialEq<i32>,
+    T: Debug,
+{
+    let debug = false;
+    if debug {
+        print!(" mult {:?}*{:?}", f, g);
+    }
     let mut prod = Vec::new();
-    for _ in 0..(f.len() + g.len() - 1) {
-        prod.push(Integer::from(0));
+    for _ in 0..(degree(f) + degree(g) + 1) {
+        prod.push(T::from(0));
     }
 
-    for i in 0..f.len() {
-        for j in 0..g.len() {
-            prod[i + j] += Integer::from(&f[i] * &g[j]);
+    for i in 0..(degree(f) as usize + 1) {
+        for j in 0..(degree(g) as usize + 1) {
+            prod[i + j] += T::from(&f[i] * &g[j]);
         }
     }
+    if debug {
+        println!("\t|\t   result {:?}", prod);
+    }
     return prod;
+}
+
+fn degree<T>(f: &[T]) -> i32
+where
+    T: PartialEq<i32>,
+{
+    for (i, val) in f.iter().enumerate().rev() {
+        if *val != 0 {
+            return i as i32;
+        }
+    }
+    return 0;
+}
+
+fn lead<T>(f: &[T]) -> (T, usize)
+where
+    T: PartialEq<i32>,
+    T: From<i32>,
+    T: Clone,
+{
+    for (i, val) in f.iter().enumerate().rev() {
+        if *val != 0 {
+            return (val.clone(), i);
+        }
+    }
+    return (T::from(0), 0);
+}
+
+pub fn divide_poly(f: &Vec<Rational>, g: &Vec<Rational>) -> (Vec<Rational>, Vec<Rational>) {
+    println!(" div {:?}/{:?}", f, g);
+    assert!(degree(g) >= 0, "divide by 0");
+    let g = &g[0..=(degree(g) as usize)];
+    let mut q: Vec<Rational> = (0..f.len()).map(|_x| Rational::from(0)).collect();
+    let mut r = f.clone();
+
+    while r.iter().any(|x| *x != 0) && degree(&r) >= degree(g) {
+        let (r_lead, r_power) = lead(&r);
+        let (g_lead, g_power) = lead(&g);
+        let t = r_lead / g_lead;
+        let t_power = r_power - g_power;
+
+        q[t_power] += &t;
+
+        print!("  t={}, t_pow={} | ", t, t_power);
+        for (i, val) in g.iter().enumerate() {
+            r[i + t_power] -= Rational::from(val * &t);
+            print!("r[{}]={},  ", i + t_power, r[i + t_power]);
+        }
+        println!("\n  q: {:?}\n  r: {:?}", q, r);
+    }
+
+    println!(" result q:{:?}, \tr:{:?}", q, r);
+    return (q, r);
+}
+
+pub fn divide_poly_zn(f: &Vec<Integer>, g: &Vec<Integer>, n: &Integer) -> (Vec<Integer>, Vec<Integer>) {
+    println!(" div {:?}/{:?}", f, g);
+    assert!(degree(g) >= 0, "divide by 0");
+    let g = &g[0..=(degree(g) as usize)];
+    let mut q: Vec<Integer> = (0..f.len()).map(|_x| Integer::from(0)).collect();
+    let mut r = f.clone();
+
+    while r.iter().any(|x| *x != 0) && degree(&r) >= degree(g) {
+        let (r_lead, r_power) = lead(&r);
+        let (g_lead, g_power) = lead(&g);
+        let g_inv = find_inverse(&g_lead, n);
+        let t = r_lead * g_inv % n;
+        
+        let t_power = r_power - g_power;
+
+        q[t_power] += &t;
+        q[t_power] %= n;
+
+        print!("  t={}, t_pow={} | ", t, t_power);
+        for (i, val) in g.iter().enumerate() {
+            r[i + t_power] -= Integer::from(val * &t);
+            r[i + t_power] %= n;
+            print!("r[{}]={},  ", i + t_power, r[i + t_power]);
+        }
+        println!("\n  q: {:?}\n  r: {:?}", q, r);
+    }
+
+    println!(" result q:{:?}, \tr:{:?}", q, r);
+    return (q, r);
+
 }
 
 pub fn exp_poly(f: &Vec<Integer>, e: &Integer) -> Vec<Integer> {
@@ -146,6 +241,163 @@ pub fn extended_euclidian(a: &Integer, b: &Integer) -> (Integer, Integer, Intege
     }
 
     // println!();
+    rs.pop();
+    ss.pop();
+    ts.pop();
+    return (rs.pop().unwrap(), ss.pop().unwrap(), ts.pop().unwrap());
+}
+
+pub fn poly_extended_euclidian_zn(
+    a: &Vec<Integer>,
+    b: &Vec<Integer>,
+    n: &Integer
+) -> (Vec<Integer>, Vec<Integer>, Vec<Integer>) {
+    let debug = true;
+
+    let a = a.clone();
+    let b = b.clone();
+    let mut qs = Vec::new();
+    let mut rs = Vec::new();
+    let mut ss = Vec::new();
+    let mut ts = Vec::new();
+
+    rs.push(a);
+    rs.push(b);
+
+    let mut identity_func = Vec::new();
+    identity_func.push(Integer::from(1));
+    ss.push(identity_func);
+    let mut zero_func = Vec::new();
+    zero_func.push(Integer::from(0));
+    ss.push(zero_func);
+
+    let mut zero_func = Vec::new();
+    zero_func.push(Integer::from(0));
+    ts.push(zero_func);
+    let mut identity_func = Vec::new();
+    identity_func.push(Integer::from(1));
+    ts.push(identity_func);
+
+    if debug {
+        println!("r:{:?} \ts:{:?} \tt:{:?}", rs[0], ss[0], ts[0]);
+        println!("r:{:?} \ts:{:?} \tt:{:?}", rs[1], ss[1], ts[1]);
+    }
+
+    let mut step = 1;
+    while rs.last().unwrap().iter().any(|x| *x != 0) {
+        let (new_q, new_r) = divide_poly_zn(&rs[step - 1], &rs[step], n);
+
+        let q_times_s = multiply_poly(&new_q, &ss[step]);
+        let mut new_s = ss[step - 1].clone();
+        for _ in 0..(q_times_s.len() - new_s.len()) {
+            new_s.push(Integer::from(0));
+        }
+        for (elem_s, elem_q) in new_s.iter_mut().zip(q_times_s) {
+            *elem_s -= elem_q;
+            *elem_s %= n;
+        }
+
+        let q_times_t = multiply_poly(&new_q, &ts[step]);
+        let mut new_t = ts[step - 1].clone();
+        for _ in 0..(q_times_t.len() - new_t.len()) {
+            new_t.push(Integer::from(0));
+        }
+        for (elem_t, elem_q) in new_t.iter_mut().zip(q_times_t) {
+            *elem_t -= elem_q;
+            *elem_t %= n;
+        }
+
+        if debug {
+            println!("r:{:?} \ts:{:?} \tt:{:?}", new_r, new_s, new_t);
+        }
+        qs.push(new_q);
+        rs.push(new_r);
+        ss.push(new_s);
+        ts.push(new_t);
+
+        step += 1;
+    }
+
+    if debug {
+        println!();
+    }
+    rs.pop();
+    ss.pop();
+    ts.pop();
+    return (rs.pop().unwrap(), ss.pop().unwrap(), ts.pop().unwrap());
+}
+
+pub fn poly_extended_euclidian(
+    a: &Vec<Integer>,
+    b: &Vec<Integer>,
+) -> (Vec<Rational>, Vec<Rational>, Vec<Rational>) {
+    let debug = true;
+
+    let a: Vec<Rational> = a.iter().map(|x| Rational::from(x)).collect();
+    let b = b.iter().map(|x| Rational::from(x)).collect();
+    let mut qs = Vec::new();
+    let mut rs = Vec::new();
+    let mut ss = Vec::new();
+    let mut ts = Vec::new();
+
+    rs.push(a);
+    rs.push(b);
+
+    let mut identity_func = Vec::new();
+    identity_func.push(Rational::from(1));
+    ss.push(identity_func);
+    let mut zero_func = Vec::new();
+    zero_func.push(Rational::from(0));
+    ss.push(zero_func);
+
+    let mut zero_func = Vec::new();
+    zero_func.push(Rational::from(0));
+    ts.push(zero_func);
+    let mut identity_func = Vec::new();
+    identity_func.push(Rational::from(1));
+    ts.push(identity_func);
+
+    if debug {
+        println!("r:{:?} \ts:{:?} \tt:{:?}", rs[0], ss[0], ts[0]);
+        println!("r:{:?} \ts:{:?} \tt:{:?}", rs[1], ss[1], ts[1]);
+    }
+
+    let mut step = 1;
+    while rs.last().unwrap().iter().any(|x| *x != 0) {
+        let (new_q, new_r) = divide_poly(&rs[step - 1], &rs[step]);
+
+        let q_times_s = multiply_poly(&new_q, &ss[step]);
+        let mut new_s = ss[step - 1].clone();
+        for _ in 0..(q_times_s.len() - new_s.len()) {
+            new_s.push(Rational::from(0));
+        }
+        for (elem_s, elem_q) in new_s.iter_mut().zip(q_times_s) {
+            *elem_s -= elem_q;
+        }
+
+        let q_times_t = multiply_poly(&new_q, &ts[step]);
+        let mut new_t = ts[step - 1].clone();
+        for _ in 0..(q_times_t.len() - new_t.len()) {
+            new_t.push(Rational::from(0));
+        }
+        for (elem_t, elem_q) in new_t.iter_mut().zip(q_times_t) {
+            *elem_t -= elem_q;
+        }
+
+        if debug {
+            println!("r:{:?} \ts:{:?} \tt:{:?}", new_r, new_s, new_t);
+        }
+        qs.push(new_q);
+        rs.push(new_r);
+        ss.push(new_s);
+        ts.push(new_t);
+
+        step += 1;
+    }
+
+    if debug {
+        println!();
+    }
     rs.pop();
     ss.pop();
     ts.pop();
@@ -279,7 +531,7 @@ pub fn coppersmith(f: &Vec<Integer>, n: &Integer, m: u32, epsilon_denom: u32) ->
         left_bound / right_bound
     );
 
-    let (reduced_basis, min_idx) = lll(&basis);
+    let (reduced_basis, _min_idx) = lll(&basis);
 
     if debug {
         for v in 0..(m + 1) {

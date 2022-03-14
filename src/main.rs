@@ -1,10 +1,12 @@
 #![allow(dead_code, non_snake_case)]
 use rug::integer::{IsPrime, Order};
-use rug::rand::{RandState};
+use rug::rand::RandState;
 use rug::{Assign, Integer, Rational};
 use std::str::FromStr;
 use std::time::Instant;
 use std::{str, vec};
+
+use crate::cryptlib::poly_extended_euclidian;
 
 mod cryptlib;
 
@@ -15,7 +17,86 @@ fn main() {
     // test_gsp_equivalence();
     // test_lll();
     // test_coppersmith();
-    test_hastad_broadcast();
+    // test_hastad_broadcast();
+    test_franklin_reiter();
+    // test_poly_euclid();
+}
+
+fn test_poly_euclid() {
+    let mut f = Vec::new();
+    f.push(Integer::from(-12));
+    f.push(Integer::from(-13));
+    f.push(Integer::from(0));
+    f.push(Integer::from(1));
+
+    let mut g = Vec::new();
+    g.push(Integer::from(8));
+    g.push(Integer::from(-6));
+    g.push(Integer::from(1));
+
+    let (r, s, t) = poly_extended_euclidian(&f, &g);
+    println!("{:?}", r);
+    println!("{:?}", s);
+    println!("{:?}", t);
+}
+
+fn test_franklin_reiter() {
+    let N_BITS = 11;
+    let e = Integer::from(3);
+
+    let mut p = Integer::new();
+    let mut q = Integer::new();
+
+    let mut rand = RandState::new();
+    rand.seed(&Integer::from(3));
+    while p.is_probably_prime(40) == IsPrime::No || Integer::from(&p % &e) == 0 {
+        p.assign(Integer::random_bits(N_BITS / 2, &mut rand));
+    }
+
+    while q.is_probably_prime(40) == IsPrime::No || Integer::from(&q % &e) == 0 {
+        q.assign(Integer::random_bits(N_BITS / 2, &mut rand));
+    }
+    let n = Integer::from(&p * &q);
+    println!("p:{} q:{}\nn:{}\n", p, q, n);
+
+    let phi_n = Integer::from(&p - 1) * Integer::from(&q - 1);
+    let _d = cryptlib::find_inverse(&phi_n, &e);
+
+    let mut f = Vec::new();
+    f.push(Integer::from(20));
+    f.push(Integer::from(3));
+
+    let msg2 = Integer::from_digits("3".as_bytes(), Order::Lsf);
+    let msg1 = cryptlib::eval_poly(&msg2, &f, &n);
+
+    println!("msg1: {}\nmsg2: {}", msg1, msg2);
+
+    let c1 = cryptlib::fast_power(&msg1, &e, &n);
+    let c2 = cryptlib::fast_power(&msg2, &e, &n);
+
+    println!("c1: {}\nc2: {}", c1, c2);
+
+    let mut g1 = cryptlib::exp_poly(&f, &e);
+    g1[0] -= &c1;
+    for val in g1.iter_mut() {
+        *val %= &n;
+    }
+    let mut identity_func = Vec::new();
+    identity_func.push(Integer::from(0));
+    identity_func.push(Integer::from(1));
+    let mut g2 = cryptlib::exp_poly(&identity_func, &e);
+    g2[0] -= &c2;
+    for val in g2.iter_mut() {
+        *val %= &n;
+    }
+
+    println!("g1: {:?}\ng2: {:?}", g1, g2);
+
+    let (r, s, t) = cryptlib::poly_extended_euclidian_zn(&g1, &g2, &n);
+    println!("r: {:?}\ns: {:?}\nt: {:?}", r, s, t);
+
+    let test: Vec<(i32, i32)> = (0..5).zip(0..3).collect();
+    println!("{:?}", test);
 }
 
 fn test_gsp_equivalence() {
@@ -184,7 +265,7 @@ fn test_hastad_broadcast() {
     let mut configs: Vec<HastadRSAConfig> = Vec::new();
 
     let mut rand = RandState::new();
-    rand.seed(&Integer::from(1));
+    // rand.seed(&Integer::from(1));
     for i in 0..CONFIGS {
         let mut p = Integer::new();
         let mut q = Integer::new();
@@ -280,7 +361,9 @@ fn test_hastad_broadcast() {
     println!("g: {:?}", g);
     println!("sanity: {}", cryptlib::eval_poly(&msg, &g, &n));
 
+    let now = Instant::now();
     let x_0 = cryptlib::coppersmith(&g, &n, m, epsilon_denom);
+    let duration = now.elapsed();
     println!("{}", x_0);
     let mut msg_bytes = Vec::new();
     for offset in 0..=(x_0.significant_bits() / 8) {
@@ -289,6 +372,9 @@ fn test_hastad_broadcast() {
         msg_bytes.push(low_u8);
     }
     println!("{}", String::from_utf8(msg_bytes).unwrap());
+    let mins = duration.as_secs() / 60;
+    let secs = duration.as_secs() % 60;
+    println!("in {} minutes {} seconds", mins, secs);
 }
 
 fn test_lll() {
