@@ -6,7 +6,7 @@ use std::str::FromStr;
 use std::time::Instant;
 use std::{str, vec};
 
-use crate::cryptlib::poly_extended_euclidian;
+use crate::cryptlib::{poly_extended_euclidian, eval_poly};
 
 mod cryptlib;
 
@@ -18,30 +18,120 @@ fn main() {
     // test_lll();
     // test_coppersmith();
     // test_hastad_broadcast();
-    test_franklin_reiter();
+    // test_div_poly_zn();
     // test_poly_euclid();
+    test_franklin_reiter();
+}
+
+fn test_div_poly_zn() {
+    let N_BITS = 256;
+    let e = Integer::from(3);
+
+    let mut p = Integer::new();
+    let mut q = Integer::new();
+
+    let mut rand = RandState::new();
+    rand.seed(&Integer::from(3));
+    while p.is_probably_prime(40) == IsPrime::No || Integer::from(&p % &e) == 0 {
+        p.assign(Integer::random_bits(N_BITS / 2, &mut rand));
+    }
+
+    while q.is_probably_prime(40) == IsPrime::No || Integer::from(&q % &e) == 0 {
+        q.assign(Integer::random_bits(N_BITS / 2, &mut rand));
+    }
+    // let n = Integer::from(&p * &q);
+    let n = Integer::from(7);
+    println!("{}", n);
+
+    let mut f = Vec::new();
+    f.push(Integer::from(5));
+    f.push(Integer::from(4));
+    f.push(Integer::from(6));
+    f.push(Integer::from(2));
+    f.push(Integer::from(4));
+
+    let mut g = Vec::new();
+    g.push(Integer::from(2));
+    g.push(Integer::from(0));
+    g.push(Integer::from(3));
+
+    let (mut r, q) = cryptlib::divide_poly_zn(&f, &g, &n);
+
+    for elem in r.iter_mut() {
+        *elem += &n;
+        *elem %= &n;
+    }
+
+    println!("{:?}", r);
+    println!("{:?}", q);
+
+    let mut prod = cryptlib::multiply_poly_zn(&r, &g, &n);
+    prod[0] += &q[0];
+    prod[1] += &q[1];
+
+    for elem in prod.iter_mut() {
+        *elem %= &n;
+        *elem += &n;
+        *elem %= &n;
+    }
+
+    println!("prod {:?}", prod);
 }
 
 fn test_poly_euclid() {
+
+    let p = Integer::from(47);
+    let q = Integer::from(67);
+
+    let n = Integer::from(&p * &q);
+
+    let e = Integer::from(3);
+
+    println!("n: {} e: {}", n, e);
+
+
     let mut f = Vec::new();
-    f.push(Integer::from(-12));
-    f.push(Integer::from(-13));
-    f.push(Integer::from(0));
-    f.push(Integer::from(1));
+    f.push(Integer::from(5));
+    f.push(Integer::from(3));
 
-    let mut g = Vec::new();
-    g.push(Integer::from(8));
-    g.push(Integer::from(-6));
-    g.push(Integer::from(1));
+    let m2 = Integer::from(14);
+    let m1 = eval_poly(&m2, &f, &n);
 
-    let (r, s, t) = poly_extended_euclidian(&f, &g);
+    println!("m1: {} m2: {}", m1, m2);
+
+    let c1 = cryptlib::fast_power(&m1, &e, &n);
+    let c2 = cryptlib::fast_power(&m2, &e, &n);
+
+    println!("c1: {} c2: {}", c1, c2);
+
+    let mut g1 = cryptlib::exp_poly(&f, &e);
+    g1[0] -= &c1;
+    g1[0] %= &n;
+    g1[0] += &n;
+    g1[0] %= &n;
+
+    let mut g2 = Vec::new();
+    g2.push(n.clone() - &c2);
+    g2.push(Integer::from(0));
+    g2.push(Integer::from(0));
+    g2.push(Integer::from(1));
+
+    println!("g1: {:?}", g1);
+    println!("g2: {:?}", g2);
+
+    let (r, s, t) = cryptlib::poly_extended_euclidian_zn(&g1, &g2, &n);
     println!("{:?}", r);
     println!("{:?}", s);
     println!("{:?}", t);
+    
+    let inv_x_term = cryptlib::find_inverse(&r[1], &n);
+    let recovered_m2 = Integer::from(&inv_x_term * -1) * &r[0] % &n;
+
+    println!("recovered m2: {}", recovered_m2);
 }
 
 fn test_franklin_reiter() {
-    let N_BITS = 11;
+    let N_BITS = 2048;
     let e = Integer::from(3);
 
     let mut p = Integer::new();
@@ -66,7 +156,7 @@ fn test_franklin_reiter() {
     f.push(Integer::from(20));
     f.push(Integer::from(3));
 
-    let msg2 = Integer::from_digits("3".as_bytes(), Order::Lsf);
+    let msg2 = Integer::from_digits("really long message takes no time because this is a direct math method with no sampling (boring)".as_bytes(), Order::Lsf);
     let msg1 = cryptlib::eval_poly(&msg2, &f, &n);
 
     println!("msg1: {}\nmsg2: {}", msg1, msg2);
@@ -80,6 +170,8 @@ fn test_franklin_reiter() {
     g1[0] -= &c1;
     for val in g1.iter_mut() {
         *val %= &n;
+        *val += &n;
+        *val %= &n;
     }
     let mut identity_func = Vec::new();
     identity_func.push(Integer::from(0));
@@ -88,15 +180,27 @@ fn test_franklin_reiter() {
     g2[0] -= &c2;
     for val in g2.iter_mut() {
         *val %= &n;
+        *val += &n;
+        *val %= &n;
     }
 
     println!("g1: {:?}\ng2: {:?}", g1, g2);
 
     let (r, s, t) = cryptlib::poly_extended_euclidian_zn(&g1, &g2, &n);
-    println!("r: {:?}\ns: {:?}\nt: {:?}", r, s, t);
+    // println!("r: {:?}\ns: {:?}\nt: {:?}", r, s, t);
 
-    let test: Vec<(i32, i32)> = (0..5).zip(0..3).collect();
-    println!("{:?}", test);
+    let inv_x_term = cryptlib::find_inverse(&r[1], &n);
+    let recovered_m2 = Integer::from(&inv_x_term * -1) * &r[0] % &n;
+
+    println!("recovered m2: {}", recovered_m2);
+
+    let mut msg_bytes = Vec::new();
+    for offset in 0..=(recovered_m2.significant_bits() / 8) {
+        let low_bytes: Integer = recovered_m2.clone() >> (offset * 8) & 0xff;
+        let low_u8 = low_bytes.to_u8().unwrap();
+        msg_bytes.push(low_u8);
+    }
+    println!("{}", String::from_utf8(msg_bytes).unwrap());
 }
 
 fn test_gsp_equivalence() {

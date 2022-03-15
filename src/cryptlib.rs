@@ -76,6 +76,27 @@ where
     return prod;
 }
 
+pub fn multiply_poly_zn(f: &[Integer], g: &[Integer], n: &Integer) -> Vec<Integer> {
+    let debug = false;
+    if debug {
+        print!(" mult {:?}*{:?}", f, g);
+    }
+    let mut prod = Vec::new();
+    for _ in 0..(degree(f) + degree(g) + 1) {
+        prod.push(Integer::from(0));
+    }
+
+    for i in 0..(degree(f) as usize + 1) {
+        for j in 0..(degree(g) as usize + 1) {
+            prod[i + j] += Integer::from(&f[i] * &g[j]) % n;
+        }
+    }
+    if debug {
+        println!("\t|\t   result {:?}", prod);
+    }
+    return prod;
+}
+
 fn degree<T>(f: &[T]) -> i32
 where
     T: PartialEq<i32>,
@@ -129,8 +150,12 @@ pub fn divide_poly(f: &Vec<Rational>, g: &Vec<Rational>) -> (Vec<Rational>, Vec<
     return (q, r);
 }
 
-pub fn divide_poly_zn(f: &Vec<Integer>, g: &Vec<Integer>, n: &Integer) -> (Vec<Integer>, Vec<Integer>) {
-    println!(" div {:?}/{:?}", f, g);
+pub fn divide_poly_zn(
+    f: &Vec<Integer>,
+    g: &Vec<Integer>,
+    n: &Integer,
+) -> (Vec<Integer>, Vec<Integer>) {
+    // println!(" div {:?}/{:?}", f, g);
     assert!(degree(g) >= 0, "divide by 0");
     let g = &g[0..=(degree(g) as usize)];
     let mut q: Vec<Integer> = (0..f.len()).map(|_x| Integer::from(0)).collect();
@@ -141,24 +166,23 @@ pub fn divide_poly_zn(f: &Vec<Integer>, g: &Vec<Integer>, n: &Integer) -> (Vec<I
         let (g_lead, g_power) = lead(&g);
         let g_inv = find_inverse(&g_lead, n);
         let t = r_lead * g_inv % n;
-        
+
         let t_power = r_power - g_power;
 
         q[t_power] += &t;
         q[t_power] %= n;
 
-        print!("  t={}, t_pow={} | ", t, t_power);
+        // print!("  t={}, t_pow={} | ", t, t_power);
         for (i, val) in g.iter().enumerate() {
             r[i + t_power] -= Integer::from(val * &t);
             r[i + t_power] %= n;
-            print!("r[{}]={},  ", i + t_power, r[i + t_power]);
+            // print!("r[{}]={},  ", i + t_power, r[i + t_power]);
         }
-        println!("\n  q: {:?}\n  r: {:?}", q, r);
+        // println!("\n  q: {:?}\n  r: {:?}", q, r);
     }
 
-    println!(" result q:{:?}, \tr:{:?}", q, r);
+    // println!(" result q:{:?}, \tr:{:?}", q, r);
     return (q, r);
-
 }
 
 pub fn exp_poly(f: &Vec<Integer>, e: &Integer) -> Vec<Integer> {
@@ -250,9 +274,9 @@ pub fn extended_euclidian(a: &Integer, b: &Integer) -> (Integer, Integer, Intege
 pub fn poly_extended_euclidian_zn(
     a: &Vec<Integer>,
     b: &Vec<Integer>,
-    n: &Integer
+    n: &Integer,
 ) -> (Vec<Integer>, Vec<Integer>, Vec<Integer>) {
-    let debug = true;
+    let debug = false;
 
     let a = a.clone();
     let b = b.clone();
@@ -287,7 +311,7 @@ pub fn poly_extended_euclidian_zn(
     while rs.last().unwrap().iter().any(|x| *x != 0) {
         let (new_q, new_r) = divide_poly_zn(&rs[step - 1], &rs[step], n);
 
-        let q_times_s = multiply_poly(&new_q, &ss[step]);
+        let q_times_s = multiply_poly_zn(&new_q, &ss[step], &n);
         let mut new_s = ss[step - 1].clone();
         for _ in 0..(q_times_s.len() - new_s.len()) {
             new_s.push(Integer::from(0));
@@ -297,7 +321,7 @@ pub fn poly_extended_euclidian_zn(
             *elem_s %= n;
         }
 
-        let q_times_t = multiply_poly(&new_q, &ts[step]);
+        let q_times_t = multiply_poly_zn(&new_q, &ts[step], &n);
         let mut new_t = ts[step - 1].clone();
         for _ in 0..(q_times_t.len() - new_t.len()) {
             new_t.push(Integer::from(0));
