@@ -1,3 +1,4 @@
+use ndarray::{ArrayView3, Array1, s};
 use rug::{ops::Pow, Float, Integer, Rational};
 use std::{
     fmt::Debug,
@@ -200,6 +201,94 @@ pub fn exp_poly(f: &Vec<Integer>, e: &Integer) -> Vec<Integer> {
         result = multiply_poly(&result, f);
     }
     return result;
+}
+
+pub fn determinant(matrix: &ArrayView3<Integer>) -> Array1<Integer> {
+    let mut to_ret = Vec::new();
+    for _ in 0..matrix.shape()[2] {
+        to_ret.push(Integer::from(0));
+    }
+    let mut to_ret = Array1::from_vec(to_ret);
+
+    if matrix.shape()[0] == 2 {
+        for i in 0..matrix.shape()[2] {
+            to_ret[i] += Integer::from(&matrix[[0,0,i]] * &matrix[[1,1,i]]);
+            to_ret[i] -= Integer::from(&matrix[[0,1,i]] * &matrix[[1,0,i]]);
+        }
+        return to_ret
+    }
+
+    for i in 0..matrix.shape()[0] {
+
+        let mut sub_matrix = [matrix.slice(s![1.., ..i, ..]), matrix.slice(s![1.., i+1.., ..])].concat();
+        
+        let sub_determinant = determinant(&sub_matrix);
+
+        for j in 0..matrix.shape()[2] {
+            if i % 2 == 0 {
+                to_ret[j] += Integer::from(&sub_determinant[j] * &matrix[[0,i,j]]);
+            } else {
+                to_ret[j] -= Integer::from(&sub_determinant[j] * &matrix[[0,i,j]]);
+            }
+        }
+    }
+
+
+    return to_ret
+}
+
+pub fn resultant(f: &Vec<Vec<Integer>>, g: &Vec<Vec<Integer>>, n: &Integer) -> Vec<Integer> {
+    let f_degree = f.len() - 1;
+    let g_degree = g.len() - 1;
+    let y_size = f[0].len() + g[0].len() - 1;
+    let mut y_vec = Vec::new();
+    y_vec.push(Integer::from(0));
+
+    let mut s_matrix = Vec::new();
+
+    for i in 0..g_degree {
+        let mut col = Vec::new();
+        for _ in 0..i {
+            let val = y_vec.clone();
+            col.push(val);
+        }
+        col.append(&mut f.clone());
+        for _ in 0..(g_degree - i - 1) {
+            let val = y_vec.clone();
+            col.push(val);
+        }
+        s_matrix.push(col);
+    }
+    for i in 0..f_degree {
+        let mut col = Vec::new();
+        for _ in 0..i {
+            let val = y_vec.clone();
+            col.push(val);
+        }
+        col.append(&mut g.clone());
+        for _ in 0..(f_degree - i - 1) {
+            let val = y_vec.clone();
+            col.push(val);
+        }
+        s_matrix.push(col);
+    }
+
+    // for col in &s_matrix {
+    //     for val in col {
+    //         print!("{:?}, ", val);
+    //     }
+    //     println!();
+    // }
+
+    // let determinant = determinant(&s_matrix, y_size);
+    for i in 0..s_matrix.len() {
+        for j in 0..s_matrix.len() {
+            print!("{:?},  ", s_matrix[j][i]);
+            print!("{:<1$}", "", 3*(3-s_matrix[j][i].len()));
+        }
+        println!();
+    }
+    return y_vec;
 }
 
 pub fn gcd(a: &Integer, b: &Integer) -> Integer {

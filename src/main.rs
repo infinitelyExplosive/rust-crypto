@@ -1,4 +1,6 @@
 #![allow(dead_code, non_snake_case)]
+use cryptlib::determinant;
+use ndarray::{Array2, Array3, ArrayView3};
 use rug::integer::{IsPrime, Order};
 use rug::rand::RandState;
 use rug::{Assign, Integer, Rational};
@@ -20,7 +22,67 @@ fn main() {
     // test_hastad_broadcast();
     // test_div_poly_zn();
     // test_poly_euclid();
-    test_franklin_reiter();
+    // test_franklin_reiter();
+    test_determinant();
+    // test_resultant();
+}
+
+fn test_determinant() {
+    // let mut matrix = Vec::new();
+    let values = [5,4,1,3,2,3,1,4,7];
+    let values:Vec<Integer> = values.iter().map(|x| Integer::from(*x)).collect();
+
+    let matrix = ArrayView3::from_shape((3,3,1), &values).unwrap();
+
+    for row in &matrix {
+        println!("{:?}", row);
+    }
+    let result = determinant(&matrix);
+    println!("{:?}", result);
+}
+
+fn test_resultant() {
+    let mut f = Vec::new();
+    let mut g = Vec::new();
+    let n = Integer::from(97);
+
+    let mut ys = Vec::new();
+    ys.push(Integer::from(3));
+    ys.push(Integer::from(2));
+    ys.push(Integer::from(1));
+    f.push(ys);
+
+    let mut ys = Vec::new();
+    ys.push(Integer::from(4));
+    ys.push(Integer::from(1));
+    ys.push(Integer::from(1));
+    g.push(ys);
+
+    let mut ys = Vec::new();
+    ys.push(Integer::from(1));
+    ys.push(Integer::from(0));
+    ys.push(Integer::from(1));
+    f.push(ys);
+
+    let mut ys = Vec::new();
+    ys.push(Integer::from(2));
+    ys.push(Integer::from(2));
+    ys.push(Integer::from(1));
+    g.push(ys);
+
+    let mut ys = Vec::new();
+    ys.push(Integer::from(1));
+    ys.push(Integer::from(1));
+    ys.push(Integer::from(1));
+    f.push(ys);
+
+    let mut ys = Vec::new();
+    ys.push(Integer::from(3));
+    ys.push(Integer::from(1));
+    ys.push(Integer::from(1));
+    g.push(ys);
+
+    let y_func = cryptlib::resultant(&f, &g, &n);
 }
 
 fn test_div_poly_zn() {
