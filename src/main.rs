@@ -1,92 +1,156 @@
-#![allow(dead_code, non_snake_case)]
-use cryptlib::determinant;
-use ndarray::{Array2, Array3, ArrayView3};
+// #![allow(dead_code, non_snake_case)]
+// use ndarray::{Array2, Array3, ArrayView3};
 use rug::integer::{IsPrime, Order};
+// use rug::ops::Pow;
 use rug::rand::RandState;
 use rug::{Assign, Integer, Rational};
+// use std::num::IntErrorKind;
 use std::str::FromStr;
 use std::time::Instant;
 use std::{str, vec};
 
-use crate::cryptlib::{poly_extended_euclidian, eval_poly};
-
 mod cryptlib;
 
 fn main() {
-    // test_rsa();
-    // test_crt();
-    // test_gsp();
-    // test_gsp_equivalence();
-    // test_lll();
-    // test_coppersmith();
-    // test_hastad_broadcast();
-    // test_div_poly_zn();
-    // test_poly_euclid();
-    // test_franklin_reiter();
+    test_rsa();
+    test_crt();
+    test_gsp();
+    test_gsp_equivalence();
+    test_lll();
+    test_coppersmith();
+    test_hastad_broadcast();
+    test_div_poly_zn();
+    test_poly_euclid();
+    test_franklin_reiter();
     test_determinant();
-    // test_resultant();
+    test_short_pad();
+}
+
+fn test_short_pad() {
+    let n_bits = 512;
+    // let e = Integer::from(3);
+    let e = Integer::from(3);
+
+    let mut p = Integer::new();
+    let mut q = Integer::new();
+
+    let mut rand = RandState::new();
+    rand.seed(&Integer::from(2));
+    while p.is_probably_prime(40) == IsPrime::No || Integer::from(&p % &e) == 0 {
+        p.assign(Integer::random_bits(n_bits / 2, &mut rand));
+    }
+
+    while q.is_probably_prime(40) == IsPrime::No || Integer::from(&q % &e) == 0 {
+        q.assign(Integer::random_bits(n_bits / 2, &mut rand));
+    }
+    let n = Integer::from(&p * &q);
+    println!("n:{}", n);
+
+    let m = Integer::from_digits("YELLOW SUBMARINE".as_bytes(), Order::Lsf);
+    // let m = Integer::from(211601);
+
+    let m1 = (m.clone() << 32) + Integer::from(91418461);
+    let m2 = (m.clone() << 32) + Integer::from(94392911);
+    let diff = Integer::from(&m2 - &m1);
+
+    let c1 = cryptlib::fast_power(&m1, &e, &n);
+    let c2 = cryptlib::fast_power(&m2, &e, &n);
+
+    let mut g1:Vec<Vec<Integer>> = (0..4).map(|_x| (0..4).map(|_y| Integer::from(0)).collect()).collect();
+    g1[0][0] -= &c1; // x^3 - c1
+    g1[3][0] += 1;
+
+    let mut g2:Vec<Vec<Integer>> = (0..4).map(|_x| (0..4).map(|_y| Integer::from(0)).collect()).collect();
+    g2[0][0] -= &c2; // (x+y)^3 - c2
+    g2[0][3] += 1;
+    g2[1][2] += 3;
+    g2[2][1] += 3;
+    g2[3][0] += 1;
+
+    println!("{:?}", g1);
+    println!("{:?}", g2);
+    println!();
+    let resultant = cryptlib::resultant(&g1, &g2, &n);
+    println!("{:?}", resultant);
+
+    let inverted = resultant.iter().map(|x| Integer::from(-x)).collect();
+    let result_inverted = cryptlib::eval_poly(&diff, &inverted, &n);
+    println!("sanity: resultant({}) = {}", diff, result_inverted);
+    let delta = cryptlib::coppersmith(&inverted, &n, 1, 18);
+    println!("delta {}", delta);
+
+    let mut f = Vec::new();
+    f.push(-delta);
+    f.push(Integer::from(1));
+
+    let mut fr_g1 = cryptlib::exp_poly(&f, &e);
+    fr_g1[0] -= &c1;
+
+    for val in fr_g1.iter_mut() {
+        *val %= &n;
+        *val += &n;
+        *val %= &n;
+    }
+    let mut identity_func = Vec::new();
+    identity_func.push(Integer::from(0));
+    identity_func.push(Integer::from(1));
+    let mut fr_g2 = cryptlib::exp_poly(&identity_func, &e);
+    fr_g2[0] -= &c2;
+    for val in fr_g2.iter_mut() {
+        *val %= &n;
+        *val += &n;
+        *val %= &n;
+    }
+
+    println!("g1: {:?}\ng2: {:?}", fr_g1, fr_g2);
+
+    let (mut r, _s, _t) = cryptlib::poly_extended_euclidean_zn(&fr_g1, &fr_g2, &n);
+    // println!("r: {:?}\ns: {:?}\nt: {:?}", r, s, t);
+
+    r[0] += &n;
+    println!("r {:?}", r);
+    let inv_x_term = cryptlib::find_inverse(&r[1], &n);
+    let recovered_m2: Integer = (((Integer::from(&inv_x_term * -1) * &r[0] % &n) + &n) % &n) >> 32;
+
+    println!("recovered m2: {}", recovered_m2);
+
+    let mut msg_bytes = Vec::new();
+    for offset in 0..=(recovered_m2.significant_bits() / 8) {
+        let low_bytes: Integer = recovered_m2.clone() >> (offset * 8) & 0xff;
+        let low_u8 = low_bytes.to_u8().unwrap();
+        msg_bytes.push(low_u8);
+    }
+    println!("{}", String::from_utf8(msg_bytes).unwrap());
 }
 
 fn test_determinant() {
-    // let mut matrix = Vec::new();
-    let values = [5,4,1,3,2,3,1,4,7];
-    let values:Vec<Integer> = values.iter().map(|x| Integer::from(*x)).collect();
+    let mut matrix = Vec::new();
+    let values = [[[5,0],[3,1],[2,1]],[[1,1],[4,0],[1,0]],[[3,0],[2,0],[3,1]]];
+    // let values = [[[1,1],[3,1]],[[2,1],[5,1]]];
 
-    let matrix = ArrayView3::from_shape((3,3,1), &values).unwrap();
+    for row in values {
+        let mut row_vec = Vec::new();
+        for elem in row {
+            let mut elem_vec = Vec::new();
+            for y_term in elem {
+                elem_vec.push(Integer::from(y_term));
+            }
+            row_vec.push(elem_vec);
+        }
+        matrix.push(row_vec);
+    }
+
 
     for row in &matrix {
         println!("{:?}", row);
     }
-    let result = determinant(&matrix);
+    let cols = (0..matrix.len()).collect();
+    let result = cryptlib::determinant(&matrix, &cols, 5, &Integer::from(97));
     println!("{:?}", result);
 }
 
-fn test_resultant() {
-    let mut f = Vec::new();
-    let mut g = Vec::new();
-    let n = Integer::from(97);
-
-    let mut ys = Vec::new();
-    ys.push(Integer::from(3));
-    ys.push(Integer::from(2));
-    ys.push(Integer::from(1));
-    f.push(ys);
-
-    let mut ys = Vec::new();
-    ys.push(Integer::from(4));
-    ys.push(Integer::from(1));
-    ys.push(Integer::from(1));
-    g.push(ys);
-
-    let mut ys = Vec::new();
-    ys.push(Integer::from(1));
-    ys.push(Integer::from(0));
-    ys.push(Integer::from(1));
-    f.push(ys);
-
-    let mut ys = Vec::new();
-    ys.push(Integer::from(2));
-    ys.push(Integer::from(2));
-    ys.push(Integer::from(1));
-    g.push(ys);
-
-    let mut ys = Vec::new();
-    ys.push(Integer::from(1));
-    ys.push(Integer::from(1));
-    ys.push(Integer::from(1));
-    f.push(ys);
-
-    let mut ys = Vec::new();
-    ys.push(Integer::from(3));
-    ys.push(Integer::from(1));
-    ys.push(Integer::from(1));
-    g.push(ys);
-
-    let y_func = cryptlib::resultant(&f, &g, &n);
-}
-
 fn test_div_poly_zn() {
-    let N_BITS = 256;
+    let n_bits = 256;
     let e = Integer::from(3);
 
     let mut p = Integer::new();
@@ -95,11 +159,11 @@ fn test_div_poly_zn() {
     let mut rand = RandState::new();
     rand.seed(&Integer::from(3));
     while p.is_probably_prime(40) == IsPrime::No || Integer::from(&p % &e) == 0 {
-        p.assign(Integer::random_bits(N_BITS / 2, &mut rand));
+        p.assign(Integer::random_bits(n_bits / 2, &mut rand));
     }
 
     while q.is_probably_prime(40) == IsPrime::No || Integer::from(&q % &e) == 0 {
-        q.assign(Integer::random_bits(N_BITS / 2, &mut rand));
+        q.assign(Integer::random_bits(n_bits / 2, &mut rand));
     }
     // let n = Integer::from(&p * &q);
     let n = Integer::from(7);
@@ -157,7 +221,7 @@ fn test_poly_euclid() {
     f.push(Integer::from(3));
 
     let m2 = Integer::from(14);
-    let m1 = eval_poly(&m2, &f, &n);
+    let m1 = cryptlib::eval_poly(&m2, &f, &n);
 
     println!("m1: {} m2: {}", m1, m2);
 
@@ -181,7 +245,7 @@ fn test_poly_euclid() {
     println!("g1: {:?}", g1);
     println!("g2: {:?}", g2);
 
-    let (r, s, t) = cryptlib::poly_extended_euclidian_zn(&g1, &g2, &n);
+    let (r, s, t) = cryptlib::poly_extended_euclidean_zn(&g1, &g2, &n);
     println!("{:?}", r);
     println!("{:?}", s);
     println!("{:?}", t);
@@ -193,7 +257,7 @@ fn test_poly_euclid() {
 }
 
 fn test_franklin_reiter() {
-    let N_BITS = 2048;
+    let n_bits = 2048;
     let e = Integer::from(3);
 
     let mut p = Integer::new();
@@ -202,11 +266,11 @@ fn test_franklin_reiter() {
     let mut rand = RandState::new();
     rand.seed(&Integer::from(3));
     while p.is_probably_prime(40) == IsPrime::No || Integer::from(&p % &e) == 0 {
-        p.assign(Integer::random_bits(N_BITS / 2, &mut rand));
+        p.assign(Integer::random_bits(n_bits / 2, &mut rand));
     }
 
     while q.is_probably_prime(40) == IsPrime::No || Integer::from(&q % &e) == 0 {
-        q.assign(Integer::random_bits(N_BITS / 2, &mut rand));
+        q.assign(Integer::random_bits(n_bits / 2, &mut rand));
     }
     let n = Integer::from(&p * &q);
     println!("p:{} q:{}\nn:{}\n", p, q, n);
@@ -248,7 +312,7 @@ fn test_franklin_reiter() {
 
     println!("g1: {:?}\ng2: {:?}", g1, g2);
 
-    let (r, s, t) = cryptlib::poly_extended_euclidian_zn(&g1, &g2, &n);
+    let (r, _s, _t) = cryptlib::poly_extended_euclidean_zn(&g1, &g2, &n);
     // println!("r: {:?}\ns: {:?}\nt: {:?}", r, s, t);
 
     let inv_x_term = cryptlib::find_inverse(&r[1], &n);
@@ -386,7 +450,7 @@ fn test_coppersmith() {
     let p: i64 = 1073741827;
     let q: i64 = 4294967311;
     let n = Integer::from(p) * q;
-    let COEFFS: Vec<&str> = vec![
+    let coeffs: Vec<&str> = vec![
         "1942528644709637042",
         "1234567890123456789",
         "987654321987654321",
@@ -395,7 +459,7 @@ fn test_coppersmith() {
     let m = 2;
     let epsilon_denom = 10;
 
-    for value in COEFFS {
+    for value in coeffs {
         // f.push(Integer::from(value));
         f.push(Integer::from_str(value).unwrap());
     }
@@ -416,13 +480,11 @@ fn test_coppersmith() {
 fn test_hastad_broadcast() {
     struct HastadRSAConfig {
         n: Integer,
-        e: Integer,
-        d: Integer,
         f: Vec<Integer>,
     }
 
-    let N_BITS = 256;
-    let CONFIGS = 3; // degree (x+c)^3 = 3
+    let n_bits = 256;
+    let num_configs = 3; // degree (x+c)^3 = 3
     let m = 2;
     let epsilon_denom = 11;
     let e = Integer::from(3);
@@ -432,7 +494,7 @@ fn test_hastad_broadcast() {
 
     let mut rand = RandState::new();
     // rand.seed(&Integer::from(1));
-    for i in 0..CONFIGS {
+    for i in 0..num_configs {
         let mut p = Integer::new();
         let mut q = Integer::new();
 
@@ -440,20 +502,17 @@ fn test_hastad_broadcast() {
             || Integer::from(&p % &e) == 0
             || configs.iter().any(|config| &config.n % p.clone() == 0)
         {
-            p.assign(Integer::random_bits(N_BITS / 2, &mut rand));
+            p.assign(Integer::random_bits(n_bits / 2, &mut rand));
         }
 
         while q.is_probably_prime(40) == IsPrime::No
             || Integer::from(&q % &e) == 0
             || configs.iter().any(|config| &config.n % q.clone() == 0)
         {
-            q.assign(Integer::random_bits(N_BITS / 2, &mut rand));
+            q.assign(Integer::random_bits(n_bits / 2, &mut rand));
         }
         let n = Integer::from(&p * &q);
         println!("p:{} q:{}\nn:{}\n", p, q, n);
-
-        let phi_n = Integer::from(&p - 1) * Integer::from(&q - 1);
-        let d = cryptlib::find_inverse(&phi_n, &e);
 
         let mut f = Vec::new();
 
@@ -463,8 +522,6 @@ fn test_hastad_broadcast() {
 
         let config = HastadRSAConfig {
             n: n,
-            e: e.clone(),
-            d: d,
             f: f,
         };
 
@@ -491,11 +548,11 @@ fn test_hastad_broadcast() {
         })
         .collect();
 
-    let n1s: Vec<Integer> = (0..CONFIGS)
+    let n1s: Vec<Integer> = (0..num_configs)
         .map(|i| {
             (&configs[0..i])
                 .iter()
-                .chain(&configs[i + 1..CONFIGS])
+                .chain(&configs[i + 1..num_configs])
                 .fold(Integer::from(1), |acc, config| acc * &config.n)
         })
         .collect();
@@ -620,20 +677,20 @@ fn test_crt() {
 }
 
 fn test_rsa() {
-    let N_BITS: u32 = 512;
+    let n_bits: u32 = 512;
     let e: Integer = Integer::from(65537);
 
-    cryptlib::extended_euclidian(&Integer::from(240), &Integer::from(47));
+    cryptlib::extended_euclidean(&Integer::from(240), &Integer::from(47));
     let mut p = Integer::new();
     let mut q = Integer::new();
 
     let mut rand = RandState::new();
     while p.is_probably_prime(40) == IsPrime::No || Integer::from(&p % &e) == 0 {
-        p.assign(Integer::random_bits(N_BITS / 2, &mut rand));
+        p.assign(Integer::random_bits(n_bits / 2, &mut rand));
     }
 
     while q.is_probably_prime(40) == IsPrime::No || Integer::from(&q % &e) == 0 {
-        q.assign(Integer::random_bits(N_BITS / 2, &mut rand));
+        q.assign(Integer::random_bits(n_bits / 2, &mut rand));
     }
     println!("p:{}\nq:{}", p, q);
 
