@@ -203,6 +203,12 @@ pub fn exp_poly(f: &Vec<Integer>, e: &Integer) -> Vec<Integer> {
     return result;
 }
 
+pub fn find_root_mod_two(f: &Vec<Integer>, n: &Integer) -> Vec<Integer> {
+    let result = Vec::new();
+
+    return result;
+}
+
 pub fn determinant(
     matrix: &Vec<Vec<Vec<Integer>>>,
     cols: &Vec<usize>,

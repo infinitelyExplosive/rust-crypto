@@ -1,7 +1,7 @@
-// #![allow(dead_code, non_snake_case)]
+#![allow(dead_code)]
 // use ndarray::{Array2, Array3, ArrayView3};
 use rug::integer::{IsPrime, Order};
-// use rug::ops::Pow;
+use rug::ops::Pow;
 use rug::rand::RandState;
 use rug::{Assign, Integer, Rational};
 // use std::num::IntErrorKind;
@@ -12,18 +12,209 @@ use std::{str, vec};
 mod cryptlib;
 
 fn main() {
-    test_rsa();
-    test_crt();
-    test_gsp();
-    test_gsp_equivalence();
-    test_lll();
-    test_coppersmith();
-    test_hastad_broadcast();
-    test_div_poly_zn();
-    test_poly_euclid();
-    test_franklin_reiter();
-    test_determinant();
-    test_short_pad();
+    // test_rsa();
+    // test_crt();
+    // test_gsp();
+    // test_gsp_equivalence();
+    // test_lll();
+    // test_coppersmith();
+    // test_hastad_broadcast();
+    // test_div_poly_zn();
+    // test_poly_euclid();
+    // test_franklin_reiter();
+    // test_determinant();
+    // test_short_pad();
+    // test_inv_quad();
+    test_partial_key();
+}
+
+fn test_inv_quad() {
+    let goal = Integer::from(9135123412323i64)* 8 + 1;
+    let n = 512;
+    let two_n = Integer::from(2).pow(n);
+    let mut results = lemma_4(&goal, n);
+    results %= &two_n;
+    results += &two_n;
+    results %= &two_n;
+    println!("{}", results);
+}
+
+fn lift(x0: &Integer, a: &Integer, j: u32) -> Integer {
+    let y0 = ((Integer::from(a) - Integer::from(x0).pow(2)) / Integer::from(2).pow(j)) % 2;
+    let x1 = Integer::from(x0) + Integer::from(2).pow(j-1) * y0;
+    return x1;
+}
+
+fn lemma_4(c: &Integer, n: u32) -> Integer{
+    let mut x = Integer::from(1);
+    let mut n0 = 3;
+    while n0 < n {
+        x = lift(&x, c, n0);
+        n0 += 1;
+    }
+    return x;
+}
+
+// fn inverse_x_squared(x: &Integer, n: u32) -> Vec<Integer> {
+//     println!("  call x^2={} mod 2^{}", x, n);
+//     let mut result = Vec::new();
+//     let p2x = p2(x, n);
+//     let o2x_m8 = o2(x, n) % 8;
+//     println!("  p2(x) = {}", p2x);
+//     let e_n = (!n) & 1;
+//     let two_n = Integer::from(2).pow(n);
+//     if p2x == n || (p2x == n - 1 && e_n == 0) || (*x == Integer::from(2).pow(n - 2) && e_n == 1) {
+//         let num_solns = Integer::from(2).pow((n - 1 + e_n) / 2);
+//         println!("  case a {} solutions", num_solns);
+//     }
+//     if p2x % 2 == 1 || (p2x % 2 == 0 && p2x < (n - 3) && o2x_m8 != 1) {
+//         println!("  case b");
+//     }
+//     if p2x % 2 == 0 && p2x <= (n - 3) && o2x_m8 == 1 {
+//         let num_solns = Integer::from(2).pow((p2x + 4) / 2);
+//         println!("  case c {} solutions", num_solns);
+//         let solutions = lemma_4(c, n);
+//     }
+//     return result;
+// }
+
+fn handle_poly(a: &Integer, b: &Integer, c: &Integer, n: u32) -> Vec<Integer> {
+    let p2a = p2(a, n);
+    let p2b = p2(b, n);
+    let p2c = p2(c, n);
+    let t = [p2a, p2b, p2c].iter().map(|x| x.clone()).min().unwrap();
+
+    println!("a = {}, b = {}, c = {}, n = {}", a, b, c, n);
+    println!(
+        "t = {}, p2(a) = {}, p2(b) = {} p2(c) = {}",
+        t,
+        p2a - t,
+        p2b - t,
+        p2c - t
+    );
+
+    if t > 0 {
+        let small_n = n - t;
+        let two_t = Integer::from(2).pow(t);
+        let new_a = Integer::from(a / &two_t);
+        let new_b = Integer::from(b / &two_t);
+        let new_c = Integer::from(c / &two_t);
+
+        let result = handle_poly(&new_a, &new_b, &new_c, small_n);
+        return result;
+    }
+
+    let b_pr = Integer::from(b / 2);
+    let b_pr_squared = b_pr.clone().pow(2);
+    let a_squared = Integer::from(a).pow(2);
+    let two_n = Integer::from(2).pow(n);
+    let a_inv = cryptlib::find_inverse(&a, &two_n);
+    let a_squared_inv = cryptlib::find_inverse(&a_squared, &two_n);
+
+    let ab = Integer::from(&b_pr_squared * &a_squared_inv);
+    let ac = Integer::from(&a_inv * c);
+    let s;
+    if p2c < 2 * (p2b - 1) {
+        // s = ((Integer::from(&ab - &ac) % 8) + 8) % 8;
+        s = ((Integer::from(&ab - &ac) % &two_n) + &two_n) % &two_n;
+    } else {
+        s = ((Integer::from(&ab - &ac) % &two_n) + &two_n) % &two_n;
+    }
+    let r = p2(&s, n);
+    let p2r = p2(&Integer::from(r), n);
+    let q = o2(&s, n);
+    let q_mod_8 = Integer::from(&q % 8);
+    println!(
+        " s = {}, r = {}, p2(r) = {}, q = {} = {} (mod 8)",
+        s, r, p2r, q, q_mod_8
+    );
+    if p2r > 0 && q_mod_8 == 1 {
+        // let new_a = Integer::from(1);
+        // let new_b = (a_inv * b) % &two_n;
+        // let new_c = (a_squared_inv * b_pr_squared - &s) % &two_n;
+
+        // println!("> a: {}, b: {}, c: {}", new_a, new_b, new_c);
+
+        println!(">>>>>>>>>>>>>>>>>>>>>>>>>>>>");
+        println!("(x + {} {})^2 = {}", a_inv, b_pr, s);
+        let insides = lemma_4(&s, n);
+        let mut results = Vec::new();
+        results.push(Integer::from(&insides));
+        results.push(-Integer::from(&insides) + &two_n);
+        results.push((Integer::from(&insides) + Integer::from(2).pow(n-1)) % &two_n);
+        results.push(-(Integer::from(&insides) + Integer::from(2).pow(n-1)) + &two_n);
+
+        let offset = Integer::from(&a_inv * &b_pr);
+        for result in results.iter_mut() {
+            *result -= &offset;
+            *result %= &two_n;
+            *result += &two_n;
+            *result %= &two_n;
+        }
+
+        return results;
+        // let xs = insides
+        //     .iter()
+        //     .map(|x| ((Integer::from(x - Integer::from(&a_inv * &b_pr)) % &two_n) + &two_n) % &two_n)
+        //     .collect();
+        // return xs;
+    }
+    return Vec::new();
+}
+
+fn p2(a: &Integer, n: u32) -> u32 {
+    if *a == 0 {
+        return n;
+    }
+    let mut i = 0;
+    let mut a = a.clone();
+    while a.is_even() && a != 0 {
+        a >>= 1;
+        i += 1;
+    }
+    return i;
+}
+
+fn o2(a: &Integer, n: u32) -> Integer {
+    let p2a = p2(a, n);
+    return a.clone() / Integer::from(2).pow(p2a);
+}
+
+fn test_partial_key() {
+    let p = Integer::from(1667);
+    let q = Integer::from(1721);
+    let n = Integer::from(&p*&q);
+    let e = Integer::from(3);
+    // let d = Integer::from(1910347);
+    // let d_0 = Integer::from(11);
+
+    for k in 0..(e.to_i32().unwrap()) {
+        let mut f = Vec::new();
+        f.push(n.clone() * k);
+        f.push(Integer::from(33) - Integer::from(&n * k) - k - 1);
+        f.push(Integer::from(k));
+
+        let n = 6;
+
+        let modulus = Integer::from(2).pow(n);
+        let a = ((Integer::from(&f[2]) % &modulus) + &modulus) % &modulus;
+        let b = ((Integer::from(&f[1]) % &modulus) + &modulus) % &modulus;
+        let c = ((Integer::from(&f[0]) % &modulus) + &modulus) % &modulus;
+        let candidates = handle_poly(&a, &b, &c, n);
+        println!("{:?}", candidates);
+
+        
+    }
+    // let mut f = Vec::new();
+    // f.push(n.clone());
+    // f.push(Integer::from(33)-&n-2);
+    // f.push(Integer::from(1));
+
+    // let modulus = Integer::from(2).pow(6);
+
+    // println!("f= {}x^2 + {}x + {} mod {}", f[2], f[1], f[0], n);
+    // let solution = cryptlib::coppersmith(&f, &n, 4, 10);
+    // println!("soln {}", solution);
 }
 
 fn test_short_pad() {
@@ -56,11 +247,15 @@ fn test_short_pad() {
     let c1 = cryptlib::fast_power(&m1, &e, &n);
     let c2 = cryptlib::fast_power(&m2, &e, &n);
 
-    let mut g1:Vec<Vec<Integer>> = (0..4).map(|_x| (0..4).map(|_y| Integer::from(0)).collect()).collect();
+    let mut g1: Vec<Vec<Integer>> = (0..4)
+        .map(|_x| (0..4).map(|_y| Integer::from(0)).collect())
+        .collect();
     g1[0][0] -= &c1; // x^3 - c1
     g1[3][0] += 1;
 
-    let mut g2:Vec<Vec<Integer>> = (0..4).map(|_x| (0..4).map(|_y| Integer::from(0)).collect()).collect();
+    let mut g2: Vec<Vec<Integer>> = (0..4)
+        .map(|_x| (0..4).map(|_y| Integer::from(0)).collect())
+        .collect();
     g2[0][0] -= &c2; // (x+y)^3 - c2
     g2[0][3] += 1;
     g2[1][2] += 3;
@@ -125,7 +320,11 @@ fn test_short_pad() {
 
 fn test_determinant() {
     let mut matrix = Vec::new();
-    let values = [[[5,0],[3,1],[2,1]],[[1,1],[4,0],[1,0]],[[3,0],[2,0],[3,1]]];
+    let values = [
+        [[5, 0], [3, 1], [2, 1]],
+        [[1, 1], [4, 0], [1, 0]],
+        [[3, 0], [2, 0], [3, 1]],
+    ];
     // let values = [[[1,1],[3,1]],[[2,1],[5,1]]];
 
     for row in values {
@@ -139,7 +338,6 @@ fn test_determinant() {
         }
         matrix.push(row_vec);
     }
-
 
     for row in &matrix {
         println!("{:?}", row);
@@ -205,7 +403,6 @@ fn test_div_poly_zn() {
 }
 
 fn test_poly_euclid() {
-
     let p = Integer::from(47);
     let q = Integer::from(67);
 
@@ -214,7 +411,6 @@ fn test_poly_euclid() {
     let e = Integer::from(3);
 
     println!("n: {} e: {}", n, e);
-
 
     let mut f = Vec::new();
     f.push(Integer::from(5));
@@ -249,7 +445,7 @@ fn test_poly_euclid() {
     println!("{:?}", r);
     println!("{:?}", s);
     println!("{:?}", t);
-    
+
     let inv_x_term = cryptlib::find_inverse(&r[1], &n);
     let recovered_m2 = Integer::from(&inv_x_term * -1) * &r[0] % &n;
 
@@ -520,10 +716,7 @@ fn test_hastad_broadcast() {
         f.push(Integer::from(1));
         // println!("f: {:?}\n", f);
 
-        let config = HastadRSAConfig {
-            n: n,
-            f: f,
-        };
+        let config = HastadRSAConfig { n: n, f: f };
 
         configs.push(config);
     }
