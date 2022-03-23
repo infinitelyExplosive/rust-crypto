@@ -593,6 +593,137 @@ pub fn crt<'a>(
     return a;
 }
 
+fn lift(x0: &Integer, a: &Integer, j: u32) -> Integer {
+    let y0 = ((Integer::from(a) - Integer::from(x0).pow(2)) / Integer::from(2).pow(j)) % 2;
+    let x1 = Integer::from(x0) + Integer::from(2).pow(j - 1) * y0;
+    return x1;
+}
+
+/*
+ * Implemented cases so far:
+ * x^2 + c = 0 (mod 2^n)
+ * 2áx^2 + 2b́x + 2ć = 0 (mod 2^n)
+ * ax^2 + 2b́x + c = 0 (mod 2^n) where p2(r)!=0 and q=1 (m 8)
+*/
+pub fn solve_quadratic(a: &Integer, b: &Integer, c: &Integer, n: u32) -> Vec<Integer> {
+    if *a == 0 && *b == 0 {
+        let c = Integer::from(-c);
+        let mut x = Integer::from(1);
+        let mut n0 = 3;
+        while n0 < n {
+            x = lift(&x, &c, n0);
+            n0 += 1;
+        }
+        let two_n = Integer::from(2).pow(n);
+        let mut results = Vec::new();
+        results.push(Integer::from(&x));
+        results.push(-Integer::from(&x) + &two_n);
+        results.push((Integer::from(&x) + Integer::from(2).pow(n - 1)) % &two_n);
+        results.push(-(Integer::from(&x) + Integer::from(2).pow(n - 1)) + &two_n);
+        return results;
+    }
+
+    let p2a = p2(a, n);
+    let p2b = p2(b, n);
+    let p2c = p2(c, n);
+    let t = [p2a, p2b, p2c].iter().map(|x| x.clone()).min().unwrap();
+
+    println!("a = {}, b = {}, c = {}, n = {}", a, b, c, n);
+    println!(
+        "t = {}, p2(a) = {}, p2(b) = {} p2(c) = {}",
+        t,
+        p2a - t,
+        p2b - t,
+        p2c - t
+    );
+
+    if t > 0 {
+        let small_n = n - t;
+        let two_t = Integer::from(2).pow(t);
+        let new_a = Integer::from(a / &two_t);
+        let new_b = Integer::from(b / &two_t);
+        let new_c = Integer::from(c / &two_t);
+
+        let results = solve_quadratic(&new_a, &new_b, &new_c, small_n);
+
+        let two_n = Integer::from(2).pow(n);
+        let two_nt = Integer::from(2).pow(n - t);
+        let mut solutions = Vec::new();
+        let mut rt = Integer::from(0);
+
+        while rt < two_n {
+            for result in &results {
+                solutions.push(Integer::from(result + &rt));
+            }
+            rt += &two_nt;
+        }
+        return solutions;
+    }
+
+    let b_pr = Integer::from(b / 2);
+    let b_pr_squared = b_pr.clone().pow(2);
+    let a_squared = Integer::from(a).pow(2);
+    let two_n = Integer::from(2).pow(n);
+    let a_inv = find_inverse(&a, &two_n);
+    let a_squared_inv = find_inverse(&a_squared, &two_n);
+
+    let ab = Integer::from(&b_pr_squared * &a_squared_inv);
+    let ac = Integer::from(&a_inv * c);
+    let s;
+    if p2c < 2 * (p2b - 1) {
+        // s = ((Integer::from(&ab - &ac) % 8) + 8) % 8; // figure out why this is wrong?
+        s = ((Integer::from(&ab - &ac) % &two_n) + &two_n) % &two_n;
+    } else {
+        s = ((Integer::from(&ab - &ac) % &two_n) + &two_n) % &two_n;
+    }
+    let r = p2(&s, n);
+    let p2r = p2(&Integer::from(r), n);
+    let q = o2(&s, n);
+    let q_mod_8 = Integer::from(&q % 8);
+    println!(
+        " s = {}, r = {}, p2(r) = {}, q = {} = {} (mod 8)",
+        s, r, p2r, q, q_mod_8
+    );
+    if p2r > 0 && q_mod_8 == 1 {
+        println!(">>>>>>>>>>>>>>>>>>>>>>>>>>>>");
+        println!("(x + {} {})^2 = {}", a_inv, b_pr, s);
+        // let mut results = lemma_4(&s, n);
+        let new_a = Integer::from(0);
+        let new_b = Integer::from(0);
+        let new_c = -Integer::from(s);
+        let mut results = solve_quadratic(&new_a, &new_b, &new_c, n);
+
+        let offset = Integer::from(&a_inv * &b_pr);
+        for result in results.iter_mut() {
+            *result -= &offset;
+            *result %= &two_n;
+            *result += &two_n;
+            *result %= &two_n;
+        }
+
+        return results;
+    }
+    return Vec::new();
+}
+
+fn p2(a: &Integer, n: u32) -> u32 {
+    if *a == 0 {
+        return n;
+    }
+    let mut i = 0;
+    let mut a = a.clone();
+    while a.is_even() && a != 0 {
+        a >>= 1;
+        i += 1;
+    }
+    return i;
+}
+
+fn o2(a: &Integer, n: u32) -> Integer {
+    let p2a = p2(a, n);
+    return a.clone() / Integer::from(2).pow(p2a);
+}
+
 pub fn coppersmith(f: &Vec<Integer>, n: &Integer, m: u32, epsilon_denom: u32) -> Integer {
     let debug = false;
 
