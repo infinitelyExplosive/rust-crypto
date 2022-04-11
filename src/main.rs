@@ -3,13 +3,16 @@
 use rug::integer::{IsPrime, Order};
 use rug::ops::Pow;
 use rug::rand::RandState;
-use rug::{Assign, Integer, Rational};
+use rug::{Assign, Float, Integer, Rational};
+use std::fs::File;
+use std::io::BufRead;
 // use std::num::IntErrorKind;
 use std::str::FromStr;
 use std::time::Instant;
-use std::{str, vec};
+use std::{str, vec, fs, io};
 
 mod cryptlib;
+mod cryptlib_bv;
 
 fn main() {
     // test_rsa();
@@ -25,7 +28,52 @@ fn main() {
     // test_determinant();
     // test_short_pad();
     // test_inv_quad();
-    test_partial_key();
+    // test_coppersmith_bv();
+    // test_partial_key();
+    test_real_bv_polys();
+}
+
+fn test_real_bv_polys() {
+    let data = File::open("polys.txt").unwrap();
+    for line in io::BufReader::new(data).lines() {
+        if let Ok(poly) = line {
+            println!("{}", poly);
+            let parts: Vec<i32> = poly.split(',').map(|x| x.parse::<i32>().unwrap()).collect();
+
+            let mut f = Vec::new();
+            let mut row = Vec::new();
+            row.push(Integer::from(parts[0]));
+            row.push(Integer::from(parts[2]));
+            f.push(row);
+            let mut row = Vec::new();
+            row.push(Integer::from(parts[1]));
+            row.push(Integer::from(parts[3]));
+            f.push(row);
+
+            let cap_x = Integer::from(parts[4] + 2);
+            let cap_y = Integer::from(parts[5] + 2);
+
+            let (x_result, y_result) = cryptlib_bv::coppersmith_bv(&f, &cap_x, &cap_y, 1);
+            
+            println!("result {} {}", x_result, y_result);
+            assert!(x_result == parts[4]);
+            assert!(y_result == parts[5]);
+            // break;
+            println!("{:-<1$}", "", 20);
+        }
+    }
+}
+
+fn test_coppersmith_bv() {
+    let f: Vec<Vec<Integer>> = vec![vec![1, 433], vec![-28, 150]]
+        .iter()
+        .map(|row| row.iter().map(|val| Integer::from(*val)).collect())
+        .collect();
+
+    let cap_x = Integer::from(19);
+    let cap_y = Integer::from(17);
+    let (x, y) = cryptlib_bv::coppersmith_bv(&f, &cap_x, &cap_y, 1);
+    println!("{} {}", x, y);
 }
 
 fn test_inv_quad() {
@@ -39,27 +87,137 @@ fn test_inv_quad() {
 }
 
 fn test_partial_key() {
-    let p = Integer::from(1667);
-    let q = Integer::from(1721);
+    let p = Integer::from(4013);
+    let q = Integer::from(3851);
     let n = Integer::from(&p * &q);
+    let phi_n = (p.clone() - 1) * (q.clone() - 1);
     let e = Integer::from(3);
-    // let d = Integer::from(1910347);
-    // let d_0 = Integer::from(11);
+    let d = cryptlib::find_inverse(&e, &phi_n);
+
+    let mut n_len = 0;
+    let mut tmp = n.clone();
+    while tmp > 0 {
+        tmp >>= 1;
+        n_len += 1;
+    }
+    let mask_len = if n_len % 4 == 0 {
+        n_len / 4
+    } else {
+        n_len / 4 + 1
+    };
+    let mask = (Integer::from(1) << mask_len) - 1;
+    let p0: Integer = p.clone() & &mask;
+    let q0: Integer = q.clone() & &mask;
+    let n0: Integer = n.clone() & &mask;
+    let d0: Integer = d.clone() & &mask;
+    let ed0: Integer = (e.clone() * &d0) & &mask;
+
+    println!("p: {} ({})\nq: {} ({})", p, p0, q, q0);
+    println!("n: {} (len {}) binary {:b}", n, n_len, n);
+    println!("mask: {:b} masklen: {}", mask, mask_len);
+    println!("n0 {}", n0);
+    println!("d: {} ({})", d, d0);
+    println!("ed mod 2^(n/4): {}", ed0);
 
     for k in 0..(e.to_i32().unwrap()) {
         let mut f = Vec::new();
         f.push(n.clone() * k);
-        f.push(Integer::from(33) - Integer::from(&n * k) - k - 1);
+        f.push(ed0.clone() - Integer::from(&n * k) - k - 1);
         f.push(Integer::from(k));
 
-        let n = 6;
-
-        let modulus = Integer::from(2).pow(n);
+        let modulus = Integer::from(2).pow(mask_len);
         let a = ((Integer::from(&f[2]) % &modulus) + &modulus) % &modulus;
         let b = ((Integer::from(&f[1]) % &modulus) + &modulus) % &modulus;
         let c = ((Integer::from(&f[0]) % &modulus) + &modulus) % &modulus;
-        let candidates = cryptlib::solve_quadratic(&a, &b, &c, n);
-        println!("{:?}", candidates);
+        let candidates = cryptlib::solve_quadratic(&a, &b, &c, mask_len);
+        println!("candidates k={}: {:?}", k, candidates);
+    }
+
+    let p0_guess = Integer::from(45);
+    let q0_guess: Integer =
+        (n.clone() * cryptlib::find_inverse(&p0_guess, &Integer::from(2).pow(mask_len))) & &mask;
+    println!("q0g: {} {:b}", q0_guess, q0_guess);
+
+    let l_correct = Float::with_val(128, &p).log2().ceil().to_integer().unwrap();
+    let k_correct: Float = Float::with_val(128, &n).log2() / 4;
+    let k_correct: Integer = k_correct.floor().to_integer().unwrap() + 1;
+    println!("k correct {}  l correct {}", k_correct, l_correct);
+    let correct_x = p.clone() / Integer::from(2).pow(k_correct.to_u32().unwrap());
+    let correct_y = q.clone() / Integer::from(2).pow(k_correct.to_u32().unwrap());
+    println!("correct x {} correct y {}", correct_x, correct_y);
+    print!("sanity check p ");
+    print_binary(&p, 0);
+    println!();
+    print!("             p ");
+    print_binary(&correct_x, 0);
+    print_binary(&p0, 1);
+    println!();
+    print!("sanity check q ");
+    print_binary(&q, 0);
+    println!();
+    print!("             q ");
+    print_binary(&correct_y, 0);
+    print_binary(&q0, 1);
+    println!();
+    let p_reconstructed = Integer::from(2).pow(k_correct.to_u32().unwrap()) * correct_x + &p0;
+    let q_reconstructed = Integer::from(2).pow(k_correct.to_u32().unwrap()) * correct_y + &q0;
+
+    println!("reconstruct p {} q {}", p_reconstructed, q_reconstructed);
+
+    'l_search: for l_offset in 0..1 {
+        for neg in [false] {
+            let l = if neg {
+                n_len / 2 - l_offset
+            } else {
+                n_len / 2 + l_offset
+            };
+            println!("trying l {}", l);
+            // let l = n_len/2 + l_offset * sign;
+            let k = (n_len / 4);
+            println!("k {}", k);
+            let cap_x = Integer::from(2).pow(l - k);
+            let cap_y = (n.clone() / Integer::from(2).pow(l + k - 1))-8;
+
+            let mut f = Vec::new();
+            let mut row = Vec::new();
+            row.push(
+                (p0_guess.clone() * q0_guess.clone() - n.clone()) / Integer::from(2).pow(k),
+            );
+            row.push(p0_guess.clone());
+            f.push(row);
+            let mut row = Vec::new();
+            row.push(q0_guess.clone());
+            row.push(Integer::from(2).pow(k));
+            f.push(row);
+
+            println!("original X={} Y={}", cap_x, cap_y);
+            let (x0, y0) = cryptlib_bv::coppersmith_bv(&f, &cap_x, &cap_y, 3);
+            let correct_x = p.clone() / Integer::from(2).pow(k);
+            println!(
+                "correct x {} {}",
+                correct_x,
+                Integer::from(2).pow(k) * &correct_x + &p0
+            );
+            print_binary(&p, 0);
+            println!();
+            print_binary(&correct_x, 0);
+            print_binary(&p0, 1);
+            println!();
+            let correct_y = q.clone() / Integer::from(2).pow(k);
+            println!(
+                "correct y {} {}",
+                correct_y,
+                Integer::from(2).pow(k) * &correct_y + &q0
+            );
+
+            println!("  x0 {} y0 {}", x0, y0);
+            let p_guess = Integer::from(2).pow(k) * x0 + &p0_guess;
+            let q_guess = Integer::from(2).pow(k) * y0 + &q0_guess;
+            println!("  guess p: {}\n        q: {}", p_guess, q_guess);
+            if Integer::from(&p_guess * &q_guess) == n {
+                break 'l_search;
+            }
+        }
     }
     // let mut f = Vec::new();
     // f.push(n.clone());
@@ -773,4 +931,17 @@ fn test_rsa() {
     let recovered_msg = str::from_utf8(&recovered_digits).unwrap();
 
     println!("recovered message {:?}", recovered_msg);
+}
+
+fn print_binary(x: &Integer, indent: u32) {
+    let mut output = String::new();
+    for _ in 0..indent {
+        print!(" ")
+    }
+    let mut x = x.clone();
+    while x > 0 {
+        output.insert_str(0, &format!("{:04b} ", x.clone() & 0xf));
+        x >>= 4;
+    }
+    print!("{}", output);
 }

@@ -2,7 +2,6 @@
 use rug::{ops::Pow, Float, Integer, Rational};
 use std::{
     fmt::Debug,
-    io::{self, Write},
     ops::{AddAssign, Mul},
 };
 
@@ -89,7 +88,10 @@ pub fn multiply_poly_zn(f: &[Integer], g: &[Integer], n: &Integer) -> Vec<Intege
 
     for i in 0..(degree(f) as usize + 1) {
         for j in 0..(degree(g) as usize + 1) {
-            prod[i + j] += Integer::from(&f[i] * &g[j]) % n;
+            prod[i + j] += Integer::from(&f[i] * &g[j]);
+            if *n > 0 {
+                prod[i + j] %= n;
+            }
         }
     }
     if debug {
@@ -157,7 +159,7 @@ pub fn divide_poly_zn(
     n: &Integer,
 ) -> (Vec<Integer>, Vec<Integer>) {
     // println!(" div {:?}/{:?}", f, g);
-    assert!(degree(g) >= 0, "divide by 0");
+    assert!(degree(g) > 0, "divide by 0");
     let g = &g[0..=(degree(g) as usize)];
     let mut q: Vec<Integer> = (0..f.len()).map(|_x| Integer::from(0)).collect();
     let mut r = f.clone();
@@ -203,12 +205,6 @@ pub fn exp_poly(f: &Vec<Integer>, e: &Integer) -> Vec<Integer> {
     return result;
 }
 
-pub fn find_root_mod_two(f: &Vec<Integer>, n: &Integer) -> Vec<Integer> {
-    let result = Vec::new();
-
-    return result;
-}
-
 pub fn determinant(
     matrix: &Vec<Vec<Vec<Integer>>>,
     cols: &Vec<usize>,
@@ -231,7 +227,9 @@ pub fn determinant(
         }
         for i in 0..(std::cmp::min(outsize, negative.len())) {
             out[i] -= &negative[i];
-            out[i] %= n;
+            if *n > 0 {
+                out[i] %= n;
+            }
         }
         return out;
     }
@@ -247,7 +245,9 @@ pub fn determinant(
             } else {
                 out[j] -= &product[j];
             }
-            out[j] %= n;
+            if *n > 0 {
+                out[j] %= n;
+            }
         }
     }
 
@@ -255,6 +255,8 @@ pub fn determinant(
 }
 
 pub fn resultant(f: &Vec<Vec<Integer>>, g: &Vec<Vec<Integer>>, n: &Integer) -> Vec<Integer> {
+    let debug = false;
+
     let f_degree = f.len() - 1;
     let g_degree = g.len() - 1;
     let mut y_vec = Vec::new();
@@ -305,28 +307,34 @@ pub fn resultant(f: &Vec<Vec<Integer>>, g: &Vec<Vec<Integer>>, n: &Integer) -> V
     //         }
     //     }
     // }
-    for i in 0..s_matrix.len() {
-        for j in 0..s_matrix.len() {
-            let string = format!("{:?}", s_matrix[j][i]);
-            // print!("{:?},  ", s_matrix[j][i]);
-            // let pad = if string.len() >= max_len {0} else {max_len - string.len()};
-            print!("{}, ", string);
-            // print!("{:<1$}", "", 4 * (4 - s_matrix[j][i].len()));
+    if debug {
+        for i in 0..s_matrix.len() {
+            for j in 0..s_matrix.len() {
+                let string = format!("{:?}", s_matrix[j][i]);
+                // print!("{:?},  ", s_matrix[j][i]);
+                // let pad = if string.len() >= max_len {0} else {max_len - string.len()};
+                print!("{}, ", string);
+                // print!("{:<1$}", "", 4 * (4 - s_matrix[j][i].len()));
+            }
+            println!();
         }
-        println!();
     }
     let determinant = determinant(&s_matrix, &(0..s_matrix.len()).collect(), 10, n);
-    println!("result: {:?}", determinant);
+    if debug {
+        println!("result: {:?}", determinant);
+    }
     return determinant;
 }
 
-// pub fn gcd(a: &Integer, b: &Integer) -> Integer {
-//     let (r, _s, _t) = extended_euclidean(a, b);
-//     return r;
-// }
+pub fn gcd(a: &Integer, b: &Integer) -> Integer {
+    let (r, _s, _t) = extended_euclidean(a, b);
+    // println!("gcd {}", r);
+    return r;
+}
 
 pub fn find_inverse(e: &Integer, n: &Integer) -> Integer {
-    let (_r, _s, t) = extended_euclidean(n, e);
+    let e = ((e.clone() % n) + n) % n;
+    let (_r, _s, t) = extended_euclidean(n, &e);
 
     if t < 0 {
         let t = t + n;
@@ -347,8 +355,10 @@ pub fn bezout(a: &Integer, b: &Integer) -> (Integer, Integer) {
 }
 
 pub fn extended_euclidean(a: &Integer, b: &Integer) -> (Integer, Integer, Integer) {
-    let a = Integer::from(a);
-    let b = Integer::from(b);
+    let a_negative = *a < 0;
+    let b_negative = *b < 0;
+    let a = Integer::from(a).abs();
+    let b = Integer::from(b).abs();
     let mut qs = Vec::new();
     let mut rs = Vec::new();
     let mut ss = Vec::new();
@@ -386,7 +396,9 @@ pub fn extended_euclidean(a: &Integer, b: &Integer) -> (Integer, Integer, Intege
     rs.pop();
     ss.pop();
     ts.pop();
-    return (rs.pop().unwrap(), ss.pop().unwrap(), ts.pop().unwrap());
+    let result_s = if a_negative {-ss.pop().unwrap()} else {ss.pop().unwrap()};
+    let result_t = if b_negative {-ts.pop().unwrap()} else {ts.pop().unwrap()};
+    return (rs.pop().unwrap(), result_s, result_t);
 }
 
 pub fn poly_extended_euclidean_zn(
@@ -429,7 +441,7 @@ pub fn poly_extended_euclidean_zn(
     while rs.last().unwrap().iter().any(|x| *x != 0) {
         let (new_q, new_r) = divide_poly_zn(&rs[step - 1], &rs[step], n);
 
-        let q_times_s = multiply_poly_zn(&new_q, &ss[step], &n);
+        let q_times_s = multiply_poly_zn(&new_q, &ss[step], n);
         let mut new_s = ss[step - 1].clone();
         for _ in 0..(q_times_s.len() - new_s.len()) {
             new_s.push(Integer::from(0));
@@ -606,7 +618,11 @@ fn lift(x0: &Integer, a: &Integer, j: u32) -> Integer {
  * ax^2 + 2b́x + c = 0 (mod 2^n) where p2(r)!=0 and q=1 (m 8)
 */
 pub fn solve_quadratic(a: &Integer, b: &Integer, c: &Integer, n: u32) -> Vec<Integer> {
+    let debug = true;
     if *a == 0 && *b == 0 {
+        // if debug {
+        //     println!("a: {} b: {} c: {} n: {}", a, b, c, n);
+        // }
         let c = Integer::from(-c);
         let mut x = Integer::from(1);
         let mut n0 = 3;
@@ -620,6 +636,7 @@ pub fn solve_quadratic(a: &Integer, b: &Integer, c: &Integer, n: u32) -> Vec<Int
         results.push(-Integer::from(&x) + &two_n);
         results.push((Integer::from(&x) + Integer::from(2).pow(n - 1)) % &two_n);
         results.push(-(Integer::from(&x) + Integer::from(2).pow(n - 1)) + &two_n);
+
         return results;
     }
 
@@ -628,14 +645,16 @@ pub fn solve_quadratic(a: &Integer, b: &Integer, c: &Integer, n: u32) -> Vec<Int
     let p2c = p2(c, n);
     let t = [p2a, p2b, p2c].iter().map(|x| x.clone()).min().unwrap();
 
-    println!("a = {}, b = {}, c = {}, n = {}", a, b, c, n);
-    println!(
-        "t = {}, p2(a) = {}, p2(b) = {} p2(c) = {}",
-        t,
-        p2a - t,
-        p2b - t,
-        p2c - t
-    );
+    if debug {
+        println!("a = {}, b = {}, c = {}, n = {}", a, b, c, n);
+        println!(
+            "t = {}, p2(a) = {}, p2(b) = {} p2(c) = {}",
+            t,
+            p2a - t,
+            p2b - t,
+            p2c - t
+        );
+    }
 
     if t > 0 {
         let small_n = n - t;
@@ -670,23 +689,27 @@ pub fn solve_quadratic(a: &Integer, b: &Integer, c: &Integer, n: u32) -> Vec<Int
     let ab = Integer::from(&b_pr_squared * &a_squared_inv);
     let ac = Integer::from(&a_inv * c);
     let s;
-    if p2c < 2 * (p2b - 1) {
-        // s = ((Integer::from(&ab - &ac) % 8) + 8) % 8; // figure out why this is wrong?
-        s = ((Integer::from(&ab - &ac) % &two_n) + &two_n) % &two_n;
-    } else {
-        s = ((Integer::from(&ab - &ac) % &two_n) + &two_n) % &two_n;
-    }
+    // if p2c < 2 * (p2b - 1) {
+    //     // s = ((Integer::from(&ab - &ac) % 8) + 8) % 8; // figure out why this is wrong?
+    //     s = ((Integer::from(&ab - &ac) % &two_n) + &two_n) % &two_n;
+    // } else {
+    s = ((Integer::from(&ab - &ac) % &two_n) + &two_n) % &two_n;
+    // }
     let r = p2(&s, n);
     let p2r = p2(&Integer::from(r), n);
     let q = o2(&s, n);
     let q_mod_8 = Integer::from(&q % 8);
-    println!(
-        " s = {}, r = {}, p2(r) = {}, q = {} = {} (mod 8)",
-        s, r, p2r, q, q_mod_8
-    );
+    if debug {
+        println!(
+            " s = {}, r = {}, p2(r) = {}, q = {} = {} (mod 8)",
+            s, r, p2r, q, q_mod_8
+        );
+    }
     if p2r > 0 && q_mod_8 == 1 {
-        println!(">>>>>>>>>>>>>>>>>>>>>>>>>>>>");
-        println!("(x + {} {})^2 = {}", a_inv, b_pr, s);
+        if debug {
+            println!(">>>>>>>>>>>>>>>>>>>>>>>>>>>>");
+            println!("(x + {} {})^2 = {}", a_inv, b_pr, s);
+        }
         // let mut results = lemma_4(&s, n);
         let new_a = Integer::from(0);
         let new_b = Integer::from(0);
@@ -847,7 +870,7 @@ pub fn lll(basis_integer: &Vec<Vec<Integer>>) -> (Vec<Vec<Integer>>, usize) {
     let debug = false;
 
     let n = basis_integer[0].len() - 1;
-    let delta = Rational::from((3, 4));
+    let delta = Rational::from((5, 6));
 
     let mut basis: Vec<Vec<Rational>> = basis_integer
         .iter()
@@ -876,7 +899,7 @@ pub fn lll(basis_integer: &Vec<Vec<Integer>>) -> (Vec<Vec<Integer>>, usize) {
     while k <= n {
         // print!("\x1b[2K\r");
         // print!("{:.<1$}", "", k);
-        io::stdout().flush().unwrap();
+        // io::stdout().flush().unwrap();
         for j in (0..k).rev() {
             if debug {
                 println!("trying k={} j={} mu={}", k, j, mu_matrix[k][j]);
@@ -936,7 +959,9 @@ pub fn lll(basis_integer: &Vec<Vec<Integer>>) -> (Vec<Vec<Integer>>, usize) {
             }
         }
     }
-    println!();
+    if debug {
+        println!();
+    }
 
     // check ∀1≤i≤n, j<i. |μ_i,j|≤1/2
     for i in 0..basis.len() {
@@ -981,9 +1006,8 @@ pub fn lll(basis_integer: &Vec<Vec<Integer>>) -> (Vec<Vec<Integer>>, usize) {
     if debug {
         println!("min norm^2 is      {}", min_norm);
     }
-    for (i, v) in basis_output.iter().enumerate() {
-        let v_rational = v.iter().map(|elem| Rational::from(elem)).collect();
-        let v_norm = l2_norm_squared(&v_rational);
+    for (i, v) in basis.iter().enumerate() {
+        let v_norm = l2_norm_squared(v);
         if debug {
             println!("v{:2} norm^2 is      {}", i, v_norm);
         }
@@ -997,20 +1021,6 @@ pub fn lll(basis_integer: &Vec<Vec<Integer>>) -> (Vec<Vec<Integer>>, usize) {
     }
     return (basis_output, min_idx);
 }
-
-// fn compute_mus(basis: &Vec<Vec<Rational>>, b_star: &Vec<Vec<Rational>>) -> Vec<Vec<Rational>> {
-//     return basis
-//         .iter()
-//         .map(|v| {
-//             b_star
-//                 .iter()
-//                 .map(|v_star| {
-//                     Rational::from(inner_product(v, v_star) / inner_product(v_star, v_star))
-//                 })
-//                 .collect()
-//         })
-//         .collect();
-// }
 
 pub fn gsp(basis: &Vec<Vec<Rational>>) -> (Vec<Vec<Rational>>, Vec<Vec<Rational>>) {
     let debug = false;
@@ -1035,7 +1045,7 @@ pub fn gsp(basis: &Vec<Vec<Rational>>) -> (Vec<Vec<Rational>>, Vec<Vec<Rational>
             }
             for (k, u_val) in u_n.iter_mut().enumerate() {
                 if *sub[k].denom() > max_denom {
-                    max_denom = Integer::from(sub[k].denom())
+                    max_denom = Integer::from(sub[k].denom());
                 }
                 *u_val -= &sub[k];
                 // limit_precision_mut(u_val, 64);
@@ -1138,7 +1148,7 @@ fn derivative(f: &Vec<Integer>, const_x: &Integer) -> Vec<Integer> {
     return to_ret;
 }
 
-fn approximate_zero(f: &Vec<Integer>, const_x: &Integer) -> Vec<Integer> {
+pub fn approximate_zero(f: &Vec<Integer>, const_x: &Integer) -> Vec<Integer> {
     let debug = false;
 
     let mut results = Vec::new();
@@ -1151,7 +1161,12 @@ fn approximate_zero(f: &Vec<Integer>, const_x: &Integer) -> Vec<Integer> {
     let n_guesses = 50;
 
     let xs: Vec<Rational> = (0..n_guesses)
-        .map(|i| Rational::from(i * const_x) / n_guesses + 97)
+        .map(|i| {
+            Rational::from((
+                2 * i * const_x.clone() - n_guesses * const_x.clone(),
+                n_guesses,
+            ))
+        })
         .collect();
 
     if debug {
