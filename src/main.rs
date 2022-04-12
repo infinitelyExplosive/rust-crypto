@@ -29,8 +29,8 @@ fn main() {
     // test_short_pad();
     // test_inv_quad();
     // test_coppersmith_bv();
-    // test_partial_key();
-    test_real_bv_polys();
+    test_partial_key();
+    // test_real_bv_polys();
 }
 
 fn test_real_bv_polys() {
@@ -50,14 +50,16 @@ fn test_real_bv_polys() {
             row.push(Integer::from(parts[3]));
             f.push(row);
 
-            let cap_x = Integer::from(parts[4] + 2);
-            let cap_y = Integer::from(parts[5] + 2);
+            let cap_x = Integer::from(parts[4] + 1);
+            let cap_y = Integer::from(parts[5] + 1);
 
             let (x_result, y_result) = cryptlib_bv::coppersmith_bv(&f, &cap_x, &cap_y, 1);
             
             println!("result {} {}", x_result, y_result);
-            assert!(x_result == parts[4]);
-            assert!(y_result == parts[5]);
+
+            assert!(cryptlib_bv::eval_poly_bv(&f, &x_result, &y_result, &Integer::from(-1)) == 0, "f(x0, y0) != 0");
+            // assert!(x_result == parts[4]);
+            // assert!(y_result == parts[5]);
             // break;
             println!("{:-<1$}", "", 20);
         }
@@ -87,8 +89,13 @@ fn test_inv_quad() {
 }
 
 fn test_partial_key() {
-    let p = Integer::from(4013);
-    let q = Integer::from(3851);
+    let extra_bits = 8;
+
+    let p = Integer::from(2703229499i64);
+    let q = Integer::from(3240128051i64);
+
+    // let p = Integer::from(4013);
+    // let q = Integer::from(3851);
     let n = Integer::from(&p * &q);
     let phi_n = (p.clone() - 1) * (q.clone() - 1);
     let e = Integer::from(3);
@@ -101,9 +108,9 @@ fn test_partial_key() {
         n_len += 1;
     }
     let mask_len = if n_len % 4 == 0 {
-        n_len / 4
+        n_len / 4 + extra_bits
     } else {
-        n_len / 4 + 1
+        n_len / 4 + 1 + extra_bits
     };
     let mask = (Integer::from(1) << mask_len) - 1;
     let p0: Integer = p.clone() & &mask;
@@ -133,14 +140,14 @@ fn test_partial_key() {
         println!("candidates k={}: {:?}", k, candidates);
     }
 
-    let p0_guess = Integer::from(45);
+    let p0_guess = Integer::from(2097723);
     let q0_guess: Integer =
         (n.clone() * cryptlib::find_inverse(&p0_guess, &Integer::from(2).pow(mask_len))) & &mask;
     println!("q0g: {} {:b}", q0_guess, q0_guess);
 
     let l_correct = Float::with_val(128, &p).log2().ceil().to_integer().unwrap();
     let k_correct: Float = Float::with_val(128, &n).log2() / 4;
-    let k_correct: Integer = k_correct.floor().to_integer().unwrap() + 1;
+    let k_correct: Integer = k_correct.floor().to_integer().unwrap() + 1 + extra_bits;
     println!("k correct {}  l correct {}", k_correct, l_correct);
     let correct_x = p.clone() / Integer::from(2).pow(k_correct.to_u32().unwrap());
     let correct_y = q.clone() / Integer::from(2).pow(k_correct.to_u32().unwrap());
@@ -173,10 +180,10 @@ fn test_partial_key() {
             };
             println!("trying l {}", l);
             // let l = n_len/2 + l_offset * sign;
-            let k = (n_len / 4);
+            let k = (n_len / 4) + 1 + extra_bits;
             println!("k {}", k);
             let cap_x = Integer::from(2).pow(l - k);
-            let cap_y = (n.clone() / Integer::from(2).pow(l + k - 1))-8;
+            let cap_y = n.clone() / Integer::from(2).pow(l + k - 1);
 
             let mut f = Vec::new();
             let mut row = Vec::new();
@@ -191,7 +198,7 @@ fn test_partial_key() {
             f.push(row);
 
             println!("original X={} Y={}", cap_x, cap_y);
-            let (x0, y0) = cryptlib_bv::coppersmith_bv(&f, &cap_x, &cap_y, 3);
+            let (x0, y0) = cryptlib_bv::coppersmith_bv(&f, &cap_x, &cap_y, 1);
             let correct_x = p.clone() / Integer::from(2).pow(k);
             println!(
                 "correct x {} {}",

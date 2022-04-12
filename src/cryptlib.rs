@@ -646,9 +646,9 @@ pub fn solve_quadratic(a: &Integer, b: &Integer, c: &Integer, n: u32) -> Vec<Int
     let t = [p2a, p2b, p2c].iter().map(|x| x.clone()).min().unwrap();
 
     if debug {
-        println!("a = {}, b = {}, c = {}, n = {}", a, b, c, n);
+        println!(" a = {}, b = {}, c = {}, n = {}", a, b, c, n);
         println!(
-            "t = {}, p2(a) = {}, p2(b) = {} p2(c) = {}",
+            " t = {}, p2(a) = {}, p2(b) = {} p2(c) = {}",
             t,
             p2a - t,
             p2b - t,
@@ -701,14 +701,14 @@ pub fn solve_quadratic(a: &Integer, b: &Integer, c: &Integer, n: u32) -> Vec<Int
     let q_mod_8 = Integer::from(&q % 8);
     if debug {
         println!(
-            " s = {}, r = {}, p2(r) = {}, q = {} = {} (mod 8)",
+            "  s = {}, r = {}, p2(r) = {}, q = {} = {} (mod 8)",
             s, r, p2r, q, q_mod_8
         );
     }
     if p2r > 0 && q_mod_8 == 1 {
         if debug {
-            println!(">>>>>>>>>>>>>>>>>>>>>>>>>>>>");
-            println!("(x + {} {})^2 = {}", a_inv, b_pr, s);
+            println!(" >>>>>>>>>>>>>>>>>>>>>>>>>>>>");
+            println!(" (x + {} {})^2 = {}", a_inv, b_pr, s);
         }
         // let mut results = lemma_4(&s, n);
         let new_a = Integer::from(0);
