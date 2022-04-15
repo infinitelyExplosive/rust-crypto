@@ -118,8 +118,8 @@ pub fn coppersmith_bv(
     cap_x: &Integer,
     cap_y: &Integer,
     k: usize,
-) -> (Integer, Integer) {
-    let debug = true;
+) -> Option<(Integer, Integer)> {
+    let debug = false;
 
     //remove gcd if present
     let mut gcd = Integer::from(0);
@@ -235,7 +235,7 @@ pub fn coppersmith_bv(
     let w_root = (3 * epsilon_recip * delta) as u32;
     let rhs = Float::with_val(1024, cap_w.clone()).pow(w_pow).root(w_root);
 
-    println!("condition {}: {:.4}", lhs < rhs, (lhs / rhs).log10());
+    println!(" condition {}: {:.4}", lhs < rhs, (lhs / rhs).log10());
 
     assert!(f[0][0] != 0, "p_0,0 = 0");
 
@@ -254,10 +254,6 @@ pub fn coppersmith_bv(
         .collect();
 
     assert!(q[0][0] == 1, "q_0,0 != 1");
-    // assert!(
-    //     eval_poly_bv(&q, &Integer::from(62), &Integer::from(60), &n) == 0,
-    //     "q(x0, y0) != 0"
-    // );
 
     if debug {
         print!("q");
@@ -294,18 +290,8 @@ pub fn coppersmith_bv(
                             println!("]");
                         }
                     } else {
-                        let cap_x_pow = cap_x.clone().pow(i as u32);
-                        let cap_y_pow = cap_y.clone().pow(j as u32);
                         new_q[i][j].assign(&n);
                     }
-                    // if debug {
-                    //     print!("created q_{},{} = ", i, j);
-                    //     print_poly_bv(&new_q);
-                    // }
-                    // assert!(
-                    //     eval_poly_bv(&new_q, &Integer::from(62), &Integer::from(60), &n) == 0,
-                    //     "new_q(62, 59) != 0"
-                    // );
                     let new_q = new_q.concat();
                     new_q
                 })
@@ -328,7 +314,7 @@ pub fn coppersmith_bv(
         }
     }
 
-    let mut lattice = qs.concat();
+    let lattice = qs.concat();
 
     if debug {
         println!("L:");
@@ -353,7 +339,6 @@ pub fn coppersmith_bv(
             normalized_h[j * (dx + k) + i] /= cap_y.clone().pow(j as u32);
         }
     }
-    // println!("TEST {:?}", normalized_h);
 
     let reversed_f: Vec<Vec<Integer>> = (0..=dy)
         .map(|j| (0..=dx).map(|i| f[i][j].clone()).collect())
@@ -398,7 +383,7 @@ pub fn coppersmith_bv(
     }
 
     let search_range = 5;
-    let mut x_val = Integer::from(-1);
+    let mut x_val;
     for candidate in &x_candidates {
         for i in -search_range..=search_range {
             let x = Integer::from(candidate + i);
@@ -428,7 +413,7 @@ pub fn coppersmith_bv(
                     *coef /= cap_y.clone().pow(i as u32);
                 }
 
-                let mut y_val = Integer::from(-1);
+                let y_val;
                 for candidate in &y_candidates {
                     // println!("trying {}", candidate);
                     for i in -search_range..=search_range {
@@ -439,7 +424,7 @@ pub fn coppersmith_bv(
                                 println!("f({}) = 0", y);
                             }
                             y_val = y;
-                            return (x_val, y_val);
+                            return Some((x_val, y_val));
                         }
                     }
                 }
@@ -447,7 +432,7 @@ pub fn coppersmith_bv(
         }
     }
 
-    return (Integer::from(-1), Integer::from(-1));
+    return None;
 }
 
 fn print_basis_bv(basis: &Vec<Vec<Vec<Rational>>>, indent: i32) {

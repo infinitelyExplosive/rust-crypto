@@ -3,6 +3,7 @@ use rug::{ops::Pow, Float, Integer, Rational};
 use std::{
     fmt::Debug,
     ops::{AddAssign, Mul},
+    process::exit,
 };
 
 pub fn eval_poly(x: &Integer, f: &Vec<Integer>, n: &Integer) -> Integer {
@@ -396,8 +397,16 @@ pub fn extended_euclidean(a: &Integer, b: &Integer) -> (Integer, Integer, Intege
     rs.pop();
     ss.pop();
     ts.pop();
-    let result_s = if a_negative {-ss.pop().unwrap()} else {ss.pop().unwrap()};
-    let result_t = if b_negative {-ts.pop().unwrap()} else {ts.pop().unwrap()};
+    let result_s = if a_negative {
+        -ss.pop().unwrap()
+    } else {
+        ss.pop().unwrap()
+    };
+    let result_t = if b_negative {
+        -ts.pop().unwrap()
+    } else {
+        ts.pop().unwrap()
+    };
     return (rs.pop().unwrap(), result_s, result_t);
 }
 
@@ -606,8 +615,16 @@ pub fn crt<'a>(
 }
 
 fn lift(x0: &Integer, a: &Integer, j: u32) -> Integer {
-    let y0 = ((Integer::from(a) - Integer::from(x0).pow(2)) / Integer::from(2).pow(j)) % 2;
-    let x1 = Integer::from(x0) + Integer::from(2).pow(j - 1) * y0;
+    let mut y0 = (Integer::from(a) - Integer::from(x0).pow(2)) / Integer::from(2).pow(j);
+    y0 = ((y0 % 2) + 2) % 2;
+    let x1: Integer = Integer::from(x0) + Integer::from(2).pow(j - 1) * &y0;
+    // println!(" y0: {} x1: {}", y0, x1);
+
+    let modulus = Integer::from(2).pow(j + 1);
+    assert!(
+        x1.clone().pow(2) % &modulus == a.clone() % &modulus,
+        "failed to lift"
+    );
     return x1;
 }
 
@@ -618,28 +635,7 @@ fn lift(x0: &Integer, a: &Integer, j: u32) -> Integer {
  * ax^2 + 2b́x + c = 0 (mod 2^n) where p2(r)!=0 and q=1 (m 8)
 */
 pub fn solve_quadratic(a: &Integer, b: &Integer, c: &Integer, n: u32) -> Vec<Integer> {
-    let debug = true;
-    if *a == 0 && *b == 0 {
-        // if debug {
-        //     println!("a: {} b: {} c: {} n: {}", a, b, c, n);
-        // }
-        let c = Integer::from(-c);
-        let mut x = Integer::from(1);
-        let mut n0 = 3;
-        while n0 < n {
-            x = lift(&x, &c, n0);
-            n0 += 1;
-        }
-        let two_n = Integer::from(2).pow(n);
-        let mut results = Vec::new();
-        results.push(Integer::from(&x));
-        results.push(-Integer::from(&x) + &two_n);
-        results.push((Integer::from(&x) + Integer::from(2).pow(n - 1)) % &two_n);
-        results.push(-(Integer::from(&x) + Integer::from(2).pow(n - 1)) + &two_n);
-
-        return results;
-    }
-
+    let debug = false;
     let p2a = p2(a, n);
     let p2b = p2(b, n);
     let p2c = p2(c, n);
@@ -679,6 +675,88 @@ pub fn solve_quadratic(a: &Integer, b: &Integer, c: &Integer, n: u32) -> Vec<Int
         return solutions;
     }
 
+    if p2a == 0 && p2b == 0 && p2c > 0 {
+        if debug {
+            println!(" weird");
+        }
+        let new_n = n - 1;
+        let new_a1 = 2 * Integer::from(a);
+        let new_b1 = Integer::from(b);
+        let new_c1 = Integer::from(c) / 2;
+
+        let results1 = solve_quadratic(&new_a1, &new_b1, &new_c1, new_n);
+
+        let new_a2 = 2 * Integer::from(a);
+        let new_b2 = 2 * Integer::from(a) + Integer::from(b);
+        let new_c2 = (Integer::from(a) + Integer::from(b) + Integer::from(c)) / 2;
+
+        let results2 = solve_quadratic(&new_a2, &new_b2, &new_c2, new_n);
+
+        let solutions = results1
+            .into_iter()
+            .map(|x| 2 * x)
+            .chain(results2.into_iter().map(|x| 2 * x + 1))
+            .collect();
+        return solutions;
+    }
+
+    if *a == 1 && *b == 0 {
+        if p2c > 1 && n > 2 {
+            if debug {
+                println!(" reducing c: {}", c);
+            }
+            let new_n = n - 2;
+            let new_a = Integer::from(a);
+            let new_b = Integer::from(b);
+            let new_c = Integer::from(c) / 4;
+
+            let results = solve_quadratic(&new_a, &new_b, &new_c, new_n);
+
+            let small_modulus = Integer::from(2).pow(n - 1);
+            let big_modulus = Integer::from(2).pow(n);
+            let mut solutions: Vec<Integer> = results
+                .iter()
+                .map(|x| (2 * Integer::from(x) + &small_modulus) % &big_modulus)
+                .chain(
+                    results
+                        .iter()
+                        .map(|x| (2 * Integer::from(x)) % &big_modulus),
+                )
+                .collect();
+            solutions.sort();
+            solutions.dedup();
+            if debug {
+                println!(" returning solutions {:?}", solutions);
+            }
+            return solutions;
+        } else {
+            if debug {
+                println!(" a: {} b: {} c: {} n: {}", a, b, c, n);
+            }
+            let c = Integer::from(-c);
+            let mut x = Integer::from(1);
+            let mut n0 = 3;
+            while n0 < n {
+                x = lift(&x, &c, n0);
+                n0 += 1;
+                if debug {
+                    println!(" lifted x to {} mod 2^{}", x, n0);
+                }
+            }
+            let two_n = Integer::from(2).pow(n);
+            let mut results = Vec::new();
+            results.push(Integer::from(&x));
+            results.push(-Integer::from(&x) + &two_n);
+            results.push((Integer::from(&x) + Integer::from(2).pow(n - 1)) % &two_n);
+            results.push(-(Integer::from(&x) + Integer::from(2).pow(n - 1)) + &two_n);
+
+            if debug {
+                println!(" returning candidates {:?}", results);
+            }
+            return results;
+        }
+    }
+
     let b_pr = Integer::from(b / 2);
     let b_pr_squared = b_pr.clone().pow(2);
     let a_squared = Integer::from(a).pow(2);
@@ -689,12 +767,7 @@ pub fn solve_quadratic(a: &Integer, b: &Integer, c: &Integer, n: u32) -> Vec<Int
     let ab = Integer::from(&b_pr_squared * &a_squared_inv);
     let ac = Integer::from(&a_inv * c);
     let s;
-    // if p2c < 2 * (p2b - 1) {
-    //     // s = ((Integer::from(&ab - &ac) % 8) + 8) % 8; // figure out why this is wrong?
-    //     s = ((Integer::from(&ab - &ac) % &two_n) + &two_n) % &two_n;
-    // } else {
     s = ((Integer::from(&ab - &ac) % &two_n) + &two_n) % &two_n;
-    // }
     let r = p2(&s, n);
     let p2r = p2(&Integer::from(r), n);
     let q = o2(&s, n);
@@ -711,12 +784,19 @@ pub fn solve_quadratic(a: &Integer, b: &Integer, c: &Integer, n: u32) -> Vec<Int
             println!(" (x + {} {})^2 = {}", a_inv, b_pr, s);
         }
         // let mut results = lemma_4(&s, n);
-        let new_a = Integer::from(0);
+        let new_a = Integer::from(1);
         let new_b = Integer::from(0);
         let new_c = -Integer::from(s);
+        println!("");
+        if new_a == *a && new_b == *b && new_c == *c {
+            exit(1);
+        }
         let mut results = solve_quadratic(&new_a, &new_b, &new_c, n);
 
         let offset = Integer::from(&a_inv * &b_pr);
+        if debug {
+            println!(" offset {}", offset);
+        }
         for result in results.iter_mut() {
             *result -= &offset;
             *result %= &two_n;
@@ -724,6 +804,9 @@ pub fn solve_quadratic(a: &Integer, b: &Integer, c: &Integer, n: u32) -> Vec<Int
             *result %= &two_n;
         }
 
+        if debug {
+            println!(" returning {:?}", results);
+        }
         return results;
     }
     return Vec::new();
