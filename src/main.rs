@@ -94,8 +94,8 @@ fn test_inv_quad() {
 }
 
 fn test_partial_key() {
-    let extra_bits = 8;
-    let n_bits = 128;
+    let extra_bits = 14;// 1024:54, 512:28, 256:14, 128:8
+    let n_bits = 256;
 
     // let p = Integer::from(4013);
     // let q = Integer::from(3851);
