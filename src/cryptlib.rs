@@ -759,7 +759,7 @@ fn o2(a: &Integer, n: u32) -> Integer {
 }
 
 pub fn coppersmith(f: &Vec<Integer>, n: &Integer, m: u32, epsilon_denom: u32) -> Option<Integer> {
-    let debug = false;
+    let debug = true;
 
     let d = f.len() as u32 - 1;
     // let m = n.significant_bits() / d;
@@ -1159,6 +1159,7 @@ fn derivative(f: &Vec<Integer>, const_x: &Integer) -> Vec<Integer> {
     return to_ret;
 }
 
+// TODO: this doesn't always work, incorrectly breaks when finding zero derivative (n_guesses even)
 pub fn approximate_zero(f: &Vec<Integer>, const_x: &Integer) -> Vec<Integer> {
     let debug = false;
 
@@ -1169,7 +1170,7 @@ pub fn approximate_zero(f: &Vec<Integer>, const_x: &Integer) -> Vec<Integer> {
         println!("f' = {:?}", f_prime);
     }
 
-    let n_guesses = 50;
+    let n_guesses = 51;
 
     let xs: Vec<Rational> = (0..n_guesses)
         .map(|i| {

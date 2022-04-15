@@ -15,22 +15,25 @@ mod cryptlib;
 mod cryptlib_bv;
 
 fn main() {
+    // component tests
     // test_rsa();
     // test_crt();
     // test_gsp();
     // test_gsp_equivalence();
     // test_lll();
     // test_coppersmith();
-    // test_hastad_broadcast();
     // test_div_poly_zn();
     // test_poly_euclid();
-    // test_franklin_reiter();
     // test_determinant();
-    // test_short_pad();
     // test_inv_quad();
     // test_coppersmith_bv();
-    test_partial_key();
     // test_real_bv_polys();
+
+    // attacks
+    // test_hastad_broadcast();
+    // test_franklin_reiter();
+    test_short_pad();
+    // test_partial_key();
 }
 
 fn test_real_bv_polys() {
@@ -251,7 +254,7 @@ fn test_short_pad() {
     let mut q = Integer::new();
 
     let mut rand = RandState::new();
-    rand.seed(&Integer::from(2));
+    rand.seed(&Integer::from(1));
     while p.is_probably_prime(40) == IsPrime::No || Integer::from(&p % &e) == 0 {
         p.assign(Integer::random_bits(n_bits / 2, &mut rand));
     }
@@ -265,8 +268,8 @@ fn test_short_pad() {
     let m = Integer::from_digits("YELLOW SUBMARINE".as_bytes(), Order::Lsf);
     // let m = Integer::from(211601);
 
-    let m1 = (m.clone() << 32) + Integer::from(91418461);
-    let m2 = (m.clone() << 32) + Integer::from(94392911);
+    let m1 = (m.clone() << 32) + Integer::from(12461);
+    let m2 = (m.clone() << 32) + Integer::from(28911);
     let diff = Integer::from(&m2 - &m1);
 
     let c1 = cryptlib::fast_power(&m1, &e, &n);
