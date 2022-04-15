@@ -490,83 +490,7 @@ pub fn poly_extended_euclidean_zn(
     return (rs.pop().unwrap(), ss.pop().unwrap(), ts.pop().unwrap());
 }
 
-// pub fn poly_extended_euclidean(
-//     a: &Vec<Integer>,
-//     b: &Vec<Integer>,
-// ) -> (Vec<Rational>, Vec<Rational>, Vec<Rational>) {
-//     let debug = true;
-
-//     let a: Vec<Rational> = a.iter().map(|x| Rational::from(x)).collect();
-//     let b = b.iter().map(|x| Rational::from(x)).collect();
-//     let mut qs = Vec::new();
-//     let mut rs = Vec::new();
-//     let mut ss = Vec::new();
-//     let mut ts = Vec::new();
-
-//     rs.push(a);
-//     rs.push(b);
-
-//     let mut identity_func = Vec::new();
-//     identity_func.push(Rational::from(1));
-//     ss.push(identity_func);
-//     let mut zero_func = Vec::new();
-//     zero_func.push(Rational::from(0));
-//     ss.push(zero_func);
-
-//     let mut zero_func = Vec::new();
-//     zero_func.push(Rational::from(0));
-//     ts.push(zero_func);
-//     let mut identity_func = Vec::new();
-//     identity_func.push(Rational::from(1));
-//     ts.push(identity_func);
-
-//     if debug {
-//         println!("r:{:?} \ts:{:?} \tt:{:?}", rs[0], ss[0], ts[0]);
-//         println!("r:{:?} \ts:{:?} \tt:{:?}", rs[1], ss[1], ts[1]);
-//     }
-
-//     let mut step = 1;
-//     while rs.last().unwrap().iter().any(|x| *x != 0) {
-//         let (new_q, new_r) = divide_poly(&rs[step - 1], &rs[step]);
-
-//         let q_times_s = multiply_poly(&new_q, &ss[step]);
-//         let mut new_s = ss[step - 1].clone();
-//         for _ in 0..(q_times_s.len() - new_s.len()) {
-//             new_s.push(Rational::from(0));
-//         }
-//         for (elem_s, elem_q) in new_s.iter_mut().zip(q_times_s) {
-//             *elem_s -= elem_q;
-//         }
-
-//         let q_times_t = multiply_poly(&new_q, &ts[step]);
-//         let mut new_t = ts[step - 1].clone();
-//         for _ in 0..(q_times_t.len() - new_t.len()) {
-//             new_t.push(Rational::from(0));
-//         }
-//         for (elem_t, elem_q) in new_t.iter_mut().zip(q_times_t) {
-//             *elem_t -= elem_q;
-//         }
-
-//         if debug {
-//             println!("r:{:?} \ts:{:?} \tt:{:?}", new_r, new_s, new_t);
-//         }
-//         qs.push(new_q);
-//         rs.push(new_r);
-//         ss.push(new_s);
-//         ts.push(new_t);
-
-//         step += 1;
-//     }
-
-//     if debug {
-//         println!();
-//     }
-//     rs.pop();
-//     ss.pop();
-//     ts.pop();
-//     return (rs.pop().unwrap(), ss.pop().unwrap(), ts.pop().unwrap());
-// }
-
+/// computes x^e mod n
 pub fn fast_power(x: &Integer, e: &Integer, n: &Integer) -> Integer {
     let mut res = Integer::from(1);
 
@@ -585,6 +509,7 @@ pub fn fast_power(x: &Integer, e: &Integer, n: &Integer) -> Integer {
 
     return res;
 }
+
 
 pub fn crt<'a>(
     vals: impl Iterator<Item = &'a Integer>,
@@ -614,21 +539,8 @@ pub fn crt<'a>(
     return a;
 }
 
-fn lift(x0: &Integer, a: &Integer, j: u32) -> Integer {
-    let mut y0 = (Integer::from(a) - Integer::from(x0).pow(2)) / Integer::from(2).pow(j);
-    y0 = ((y0 % 2) + 2) % 2;
-    let x1: Integer = Integer::from(x0) + Integer::from(2).pow(j - 1) * &y0;
-    // println!(" y0: {} x1: {}", y0, x1);
-
-    let modulus = Integer::from(2).pow(j + 1);
-    assert!(
-        x1.clone().pow(2) % &modulus == a.clone() % &modulus,
-        "failed to lift"
-    );
-    return x1;
-}
-
 /*
+ * Find all solutions to quadratic equation ax^2 + bx + c = 0 (mod 2^n)
  * Implemented cases so far:
  * x^2 + c = 0 (mod 2^n)
  * 2áx^2 + 2b́x + 2ć = 0 (mod 2^n)
@@ -783,7 +695,6 @@ pub fn solve_quadratic(a: &Integer, b: &Integer, c: &Integer, n: u32) -> Vec<Int
             println!(" >>>>>>>>>>>>>>>>>>>>>>>>>>>>");
             println!(" (x + {} {})^2 = {}", a_inv, b_pr, s);
         }
-        // let mut results = lemma_4(&s, n);
         let new_a = Integer::from(1);
         let new_b = Integer::from(0);
         let new_c = -Integer::from(s);
@@ -812,6 +723,22 @@ pub fn solve_quadratic(a: &Integer, b: &Integer, c: &Integer, n: u32) -> Vec<Int
     return Vec::new();
 }
 
+/// Lift a quadratic residue x^2=a mod 2^j to mod 2^(j+1)
+fn lift(x0: &Integer, a: &Integer, j: u32) -> Integer {
+    let mut y0 = (Integer::from(a) - Integer::from(x0).pow(2)) / Integer::from(2).pow(j);
+    y0 = ((y0 % 2) + 2) % 2;
+    let x1: Integer = Integer::from(x0) + Integer::from(2).pow(j - 1) * &y0;
+    // println!(" y0: {} x1: {}", y0, x1);
+
+    let modulus = Integer::from(2).pow(j + 1);
+    assert!(
+        x1.clone().pow(2) % &modulus == a.clone() % &modulus,
+        "failed to lift"
+    );
+    return x1;
+}
+
+/// Calculate p_2(a)
 fn p2(a: &Integer, n: u32) -> u32 {
     if *a == 0 {
         return n;
@@ -825,12 +752,13 @@ fn p2(a: &Integer, n: u32) -> u32 {
     return i;
 }
 
+/// Calculate o_2(a)
 fn o2(a: &Integer, n: u32) -> Integer {
     let p2a = p2(a, n);
     return a.clone() / Integer::from(2).pow(p2a);
 }
 
-pub fn coppersmith(f: &Vec<Integer>, n: &Integer, m: u32, epsilon_denom: u32) -> Integer {
+pub fn coppersmith(f: &Vec<Integer>, n: &Integer, m: u32, epsilon_denom: u32) -> Option<Integer> {
     let debug = false;
 
     let d = f.len() as u32 - 1;
@@ -941,12 +869,12 @@ pub fn coppersmith(f: &Vec<Integer>, n: &Integer, m: u32, epsilon_denom: u32) ->
                 let x = Integer::from(&guess_x + i);
                 let f_of_x = eval_poly(&x, f, n);
                 if f_of_x == 0 {
-                    return x;
+                    return Some(x);
                 }
             }
         }
     }
-    return Integer::from(-1);
+    return None;
 }
 
 pub fn lll(basis_integer: &Vec<Vec<Integer>>) -> (Vec<Vec<Integer>>, usize) {
@@ -1310,9 +1238,3 @@ fn limit_precision(mut x: Rational, shift: i32) -> Rational {
     x >>= shift;
     return x;
 }
-
-// fn limit_precision_mut(x: &mut Rational, shift: i32) {
-//     *x <<= shift;
-//     x.round_mut();
-//     *x >>= shift;
-// }

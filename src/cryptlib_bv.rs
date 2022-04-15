@@ -25,7 +25,7 @@ pub fn eval_poly_bv(f: &Vec<Vec<Integer>>, x: &Integer, y: &Integer, n: &Integer
     return sum;
 }
 /// Returns the x-first leading coefficient as (coefficient, x power, y power)
-fn lead_bv(f: &[Vec<Integer>]) -> (Integer, usize, usize) {
+fn lead_bv(f: &Vec<Vec<Integer>>) -> (Integer, usize, usize) {
     for (i, row) in f.iter().enumerate().rev() {
         for (j, val) in row.iter().enumerate().rev() {
             if *val != 0 {
@@ -37,7 +37,7 @@ fn lead_bv(f: &[Vec<Integer>]) -> (Integer, usize, usize) {
 }
 
 /// Returns the degree of the polynomial as (x degree, y degree)
-fn degree_bv(f: &[Vec<Integer>]) -> (usize, usize) {
+fn degree_bv(f: &Vec<Vec<Integer>>) -> (usize, usize) {
     let mut xmax = 0;
     let mut ymax = 0;
     for (i, row) in f.iter().enumerate() {
@@ -113,6 +113,8 @@ pub fn exp_poly_bv(f: &Vec<Vec<Integer>>, e: &Integer, n: &Integer) -> Vec<Vec<I
     return result;
 }
 
+/// Finds a small root (x0, y0) of f where x0 < X, y0 < Y
+/// larger values of k allow for larger values of X, Y
 pub fn coppersmith_bv(
     f: &Vec<Vec<Integer>>,
     cap_x: &Integer,

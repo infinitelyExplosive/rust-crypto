@@ -296,7 +296,7 @@ fn test_short_pad() {
     let inverted = resultant.iter().map(|x| Integer::from(-x)).collect();
     let result_inverted = cryptlib::eval_poly(&diff, &inverted, &n);
     println!("sanity: resultant({}) = {}", diff, result_inverted);
-    let delta = cryptlib::coppersmith(&inverted, &n, 1, 18);
+    let delta = cryptlib::coppersmith(&inverted, &n, 1, 18).unwrap();
     println!("delta {}", delta);
 
     let mut f = Vec::new();
@@ -687,7 +687,7 @@ fn test_coppersmith() {
 
     println!("f is {:?}", f);
     let now = Instant::now();
-    let value = cryptlib::coppersmith(&f, &n, m, epsilon_denom);
+    let value = cryptlib::coppersmith(&f, &n, m, epsilon_denom).unwrap();
 
     let duration = now.elapsed();
     if value > 0 {
@@ -803,7 +803,7 @@ fn test_hastad_broadcast() {
     println!("sanity: {}", cryptlib::eval_poly(&msg, &g, &n));
 
     let now = Instant::now();
-    let x_0 = cryptlib::coppersmith(&g, &n, m, epsilon_denom);
+    let x_0 = cryptlib::coppersmith(&g, &n, m, epsilon_denom).unwrap();
     let duration = now.elapsed();
     println!("{}", x_0);
     let mut msg_bytes = Vec::new();
